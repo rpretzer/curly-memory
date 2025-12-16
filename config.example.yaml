@@ -1,0 +1,90 @@
+# Default Search Parameters
+search:
+  default_titles:
+    - "Senior Product Manager"
+    - "Principal Product Manager"
+    - "Product Manager"
+  default_locations:
+    - "Remote, US"
+    - "San Francisco, CA"
+    - "New York, NY"
+  default_remote_preference: "remote"  # remote, hybrid, on-site, any
+  default_salary_min: 120000
+  default_max_results_per_source: 50
+
+# Scoring Weights (0-10 scale)
+scoring:
+  title_match_weight: 8.0
+  vertical_match_weight: 6.0
+  remote_preference_weight: 5.0
+  comp_match_weight: 7.0
+  keyword_overlap_weight: 6.0
+  company_match_weight: 5.0
+  posting_recency_weight: 3.0
+  
+# Target Verticals (keywords to match)
+verticals:
+  - insurance
+  - insurtech
+  - fintech
+  - financial services
+  - data analytics
+  - data-heavy
+  - machine learning
+  - ai
+
+# Scoring Thresholds
+thresholds:
+  min_relevance_score: 5.0  # Minimum score to keep job
+  high_relevance_score: 8.0  # Auto-approve threshold
+
+# LLM Defaults
+llm:
+  model: "gpt-4-turbo-preview"
+  temperature: 0.7
+  top_p: 1.0
+  max_tokens: 2000
+  resume_generation_temperature: 0.5
+  cover_letter_temperature: 0.7
+
+# Job Source Configuration
+job_sources:
+  linkedin:
+    enabled: true
+    max_results: 50
+    rate_limit_delay: 2.0  # seconds between requests
+  indeed:
+    enabled: true
+    max_results: 50
+    rate_limit_delay: 2.0
+  wellfound:
+    enabled: true
+    max_results: 50
+    rate_limit_delay: 2.0
+
+# Feature Flags
+features:
+  enable_playwright: true
+  enable_auto_apply: false  # Requires human approval even if true
+  enable_content_generation: true
+  enable_email_notifications: false
+
+# Scheduler Configuration
+scheduler:
+  enabled: true
+  run_frequency_hours: 24
+  run_at_time: "09:00"  # HH:MM format
+
+# Content Generation Prompts (can be customized)
+content_prompts:
+  resume_summary: |
+    Generate 3-5 tailored bullet points for a resume based on the job description.
+    Focus on matching the job requirements with relevant experience.
+    
+  cover_letter_template: |
+    Write a professional cover letter for this position.
+    Keep it concise (200-300 words) and highlight relevant experience.
+    
+  application_answers: |
+    Generate concise answers (50-100 words) to common application questions
+    based on the job requirements and candidate profile.
