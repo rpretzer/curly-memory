@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 import yaml
 
@@ -11,40 +11,56 @@ import yaml
 class LLMConfig(BaseSettings):
     """LLM configuration settings."""
     
-    api_key: str = Field(..., env="OPENAI_API_KEY")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
+    
+    api_key: str = Field(..., validation_alias="OPENAI_API_KEY")
     model: str = Field(default="gpt-4-turbo-preview", env="LLM_MODEL")
     temperature: float = Field(default=0.7, env="LLM_TEMPERATURE")
     top_p: float = Field(default=1.0, env="LLM_TOP_P")
     max_tokens: int = Field(default=2000, env="LLM_MAX_TOKENS")
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 
 
 class DatabaseConfig(BaseSettings):
     """Database configuration."""
     
-    url: str = Field(default="sqlite:///./job_pipeline.db", env="DATABASE_URL")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    url: str = Field(default="sqlite:///./job_pipeline.db", env="DATABASE_URL")
 
 
 class PlaywrightConfig(BaseSettings):
     """Playwright browser automation configuration."""
     
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
+    
     enabled: bool = Field(default=True, env="ENABLE_PLAYWRIGHT")
     headless: bool = Field(default=True, env="PLAYWRIGHT_HEADLESS")
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 
 
 class APIConfig(BaseSettings):
     """API server configuration."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
     
     host: str = Field(default="0.0.0.0", env="API_HOST")
     port: int = Field(default=8000, env="API_PORT")
@@ -52,10 +68,6 @@ class APIConfig(BaseSettings):
         default="http://localhost:3000", 
         env="CORS_ORIGINS"
     )
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 
 
 class Config:
@@ -83,6 +95,12 @@ class Config:
         self.linkedin_api_key = os.getenv("LINKEDIN_API_KEY", "")
         self.indeed_api_key = os.getenv("INDEED_API_KEY", "")
         self.wellfound_api_key = os.getenv("WELLFOUND_API_KEY", "")
+        
+        # Third-party scraping API keys
+        self.scrapeops_api_key = os.getenv("SCRAPEOPS_API_KEY", "")
+        self.hasdata_api_key = os.getenv("HASDATA_API_KEY", "")
+        self.apify_api_key = os.getenv("APIFY_API_KEY", "")
+        self.mantiks_api_key = os.getenv("MANTIKS_API_KEY", "")
         
         # Feature flags
         self.human_in_the_loop = os.getenv("HUMAN_IN_THE_LOOP", "true").lower() == "true"

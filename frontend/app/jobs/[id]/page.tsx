@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import axios from 'axios';
+import { format } from 'date-fns';
+import DocumentViewer from '../../components/DocumentViewer';
+import Notification from '../../components/Notification';
 
 interface JobDetail {
   id: number;
@@ -25,6 +28,9 @@ interface JobDetail {
   cover_letter_draft?: string;
   application_answers?: Record<string, string>;
   created_at: string;
+  application_error?: string;
+  application_started_at?: string;
+  application_completed_at?: string;
 }
 
 export default function JobDetailPage() {
@@ -32,6 +38,7 @@ export default function JobDetailPage() {
   const router = useRouter();
   const [job, setJob] = useState<JobDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   useEffect(() => {
     if (params.id) {
@@ -55,8 +62,10 @@ export default function JobDetailPage() {
     try {
       await axios.post(`/api/jobs/${job.id}/approve`);
       setJob({ ...job, approved: true });
+      setNotification({ message: 'Job approved successfully', type: 'success' });
     } catch (error) {
       console.error('Error approving job:', error);
+      setNotification({ message: 'Failed to approve job', type: 'error' });
     }
   };
 
@@ -74,9 +83,22 @@ export default function JobDetailPage() {
   const handleApply = async () => {
     if (!job) return;
     try {
-      await axios.post(`/api/jobs/${job.id}/apply`);
-      alert('Application started!');
-    } catch (error) {
+      const response = await axios.post(`/api/jobs/${job.id}/apply`);
+      if (response.data.status === 'started') {
+        setNotification({ message: 'Application process started! Status will update shortly.', type: 'success' });
+        // Refresh job data periodically to get updated status
+        const refreshInterval = setInterval(() => {
+          fetchJob(job.id);
+        }, 3000);
+        // Stop refreshing after 30 seconds
+        setTimeout(() => clearInterval(refreshInterval), 30000);
+      } else if (response.data.status === 'already_applied') {
+        setNotification({ message: 'You have already applied to this job.', type: 'info' });
+        fetchJob(job.id);
+      }
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.detail || 'Failed to start application';
+      setNotification({ message: `Error: ${errorMsg}`, type: 'error' });
       console.error('Error applying:', error);
     }
   };
@@ -91,6 +113,13 @@ export default function JobDetailPage() {
 
   return (
     <main className="min-h-screen bg-gray-50">
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
+      )}
       <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
           <button
@@ -116,13 +145,19 @@ export default function JobDetailPage() {
                     Approve
                   </button>
                 )}
-                {job.approved && (
+                {job.approved && job.status !== 'application_completed' && job.status !== 'application_started' && (
                   <button
                     onClick={handleApply}
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    disabled={job.status === 'application_started'}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Apply
+                    {job.status === 'application_started' ? 'Applying...' : 'Apply'}
                   </button>
+                )}
+                {job.status === 'application_completed' && (
+                  <span className="px-4 py-2 bg-green-600 text-white rounded">
+                    ✓ Applied
+                  </span>
                 )}
                 <a
                   href={job.source_url}
@@ -135,11 +170,44 @@ export default function JobDetailPage() {
               </div>
             </div>
 
-            {job.relevance_score && (
-              <div className="mb-4">
+            <div className="mb-4 flex flex-wrap gap-2 items-center">
+              {job.relevance_score && (
                 <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full font-semibold">
                   Relevance Score: {job.relevance_score.toFixed(2)}/10
                 </span>
+              )}
+              {job.status === 'application_completed' && (
+                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full font-semibold">
+                  ✓ Application Completed
+                </span>
+              )}
+              {job.status === 'application_started' && (
+                <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full font-semibold">
+                  ⏳ Application In Progress
+                </span>
+              )}
+              {job.status === 'application_failed' && (
+                <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full font-semibold">
+                  ✗ Application Failed
+                </span>
+              )}
+            </div>
+            
+            {job.application_error && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <h4 className="font-semibold text-red-800 mb-2">Application Error:</h4>
+                <p className="text-red-700 text-sm">{job.application_error}</p>
+                {job.application_error.includes('CAPTCHA') && (
+                  <p className="text-red-600 text-xs mt-2">
+                    💡 Tip: CAPTCHA detected. You may need to apply manually or solve the CAPTCHA.
+                  </p>
+                )}
+              </div>
+            )}
+            
+            {job.application_completed_at && (
+              <div className="mb-4 text-sm text-gray-600">
+                Applied on: {format(new Date(job.application_completed_at), 'PPp')}
               </div>
             )}
 
@@ -158,40 +226,37 @@ export default function JobDetailPage() {
             )}
           </div>
 
+          {/* Generated Content - Using Document Viewer */}
           {job.llm_summary && (
-            <div className="bg-white shadow rounded-lg p-6 mb-6">
-              <h2 className="text-xl font-bold mb-4">AI Summary</h2>
-              <p className="text-gray-700">{job.llm_summary}</p>
-            </div>
+            <DocumentViewer
+              title="AI Summary"
+              content={job.llm_summary}
+              type="summary"
+            />
           )}
 
           {job.description && (
-            <div className="bg-white shadow rounded-lg p-6 mb-6">
-              <h2 className="text-xl font-bold mb-4">Job Description</h2>
-              <div className="prose max-w-none">
-                <p className="text-gray-700 whitespace-pre-wrap">{job.description}</p>
-              </div>
-            </div>
+            <DocumentViewer
+              title="Job Description"
+              content={job.description}
+              type="raw"
+            />
           )}
 
           {job.tailored_resume_points && job.tailored_resume_points.length > 0 && (
-            <div className="bg-white shadow rounded-lg p-6 mb-6">
-              <h2 className="text-xl font-bold mb-4">Tailored Resume Points</h2>
-              <ul className="list-disc list-inside space-y-2">
-                {job.tailored_resume_points.map((point, idx) => (
-                  <li key={idx} className="text-gray-700">{point}</li>
-                ))}
-              </ul>
-            </div>
+            <DocumentViewer
+              title="Tailored Resume Points"
+              content={job.tailored_resume_points}
+              type="resume-points"
+            />
           )}
 
           {job.cover_letter_draft && (
-            <div className="bg-white shadow rounded-lg p-6 mb-6">
-              <h2 className="text-xl font-bold mb-4">Cover Letter Draft</h2>
-              <div className="prose max-w-none">
-                <p className="text-gray-700 whitespace-pre-wrap">{job.cover_letter_draft}</p>
-              </div>
-            </div>
+            <DocumentViewer
+              title="Cover Letter Draft"
+              content={job.cover_letter_draft}
+              type="cover-letter"
+            />
           )}
 
           {!job.llm_summary && (

@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field
+from app.jobsources.utils import retry_with_backoff, ProxyRotator, rotate_user_agent
 
 
 class JobListing(BaseModel):
@@ -37,6 +38,17 @@ class BaseJobSource(ABC):
         """
         self.config = config or {}
         self.name = self.__class__.__name__
+        
+        # Initialize proxy rotator if proxies are configured
+        proxies = self.config.get('proxies', [])
+        if proxies:
+            self.proxy_rotator = ProxyRotator(proxies)
+        else:
+            self.proxy_rotator = None
+        
+        # Retry configuration
+        self.max_retries = self.config.get('max_retries', 3)
+        self.retry_delay = self.config.get('retry_delay', 1.0)
     
     @abstractmethod
     def search(

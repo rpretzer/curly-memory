@@ -5,8 +5,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 
 from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.models import Job
 from app.config import config
@@ -52,11 +51,11 @@ class ContentGenerationAgent:
         # Initialize LLM
         try:
             self.llm = ChatOpenAI(
-                model_name=self.llm_model,
+                model=self.llm_model,
                 temperature=self.temperature,
                 top_p=self.top_p,
                 max_tokens=self.max_tokens,
-                openai_api_key=config.llm.api_key,
+                api_key=config.llm.api_key,
             )
         except Exception as e:
             logger.error(f"Failed to initialize LLM: {e}")
@@ -236,11 +235,11 @@ Generate bullet points that:
             
             # Use specialized temperature for cover letters
             temp_llm = ChatOpenAI(
-                model_name=self.llm_model,
+                model=self.llm_model,
                 temperature=config.get_llm_defaults().get("cover_letter_temperature", 0.7),
                 top_p=self.top_p,
                 max_tokens=self.max_tokens,
-                openai_api_key=config.llm.api_key,
+                api_key=config.llm.api_key,
             )
             
             prompt_template = self.prompts.get("cover_letter_template", """

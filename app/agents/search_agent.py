@@ -34,6 +34,11 @@ class SearchAgent:
         # LinkedIn
         if job_sources_config.get("linkedin", {}).get("enabled", True):
             linkedin_config = job_sources_config.get("linkedin", {})
+            # Add third-party API keys to config if available
+            if config.apify_api_key:
+                linkedin_config["apify_api_key"] = config.apify_api_key
+            if config.mantiks_api_key:
+                linkedin_config["mantiks_api_key"] = config.mantiks_api_key
             self.sources["linkedin"] = LinkedInAdapter(
                 config=linkedin_config,
                 api_key=config.linkedin_api_key
@@ -42,6 +47,11 @@ class SearchAgent:
         # Indeed
         if job_sources_config.get("indeed", {}).get("enabled", True):
             indeed_config = job_sources_config.get("indeed", {})
+            # Add third-party API keys to config if available
+            if config.scrapeops_api_key:
+                indeed_config["scrapeops_api_key"] = config.scrapeops_api_key
+            if config.hasdata_api_key:
+                indeed_config["hasdata_api_key"] = config.hasdata_api_key
             self.sources["indeed"] = IndeedAdapter(
                 config=indeed_config,
                 api_key=config.indeed_api_key

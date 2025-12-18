@@ -1,0 +1,89 @@
+search:
+  default_titles:
+  - Senior Product Manager
+  - Principal Product Manager
+  - Product Manager
+  default_locations:
+  - Remote, US
+  - Cleveland, OH
+  default_remote_preference: remote
+  default_salary_min: 120000
+  default_max_results_per_source: 50
+scoring:
+  title_match_weight: 8
+  vertical_match_weight: 6
+  remote_preference_weight: 5
+  comp_match_weight: 7
+  keyword_overlap_weight: 6
+  company_match_weight: 5
+  posting_recency_weight: 3
+verticals:
+- insurance
+- insurtech
+- fintech
+- financial services
+- data analytics
+- data-heavy
+- machine learning
+- ai
+thresholds:
+  min_relevance_score: 5
+  high_relevance_score: 8
+llm:
+  model: gpt-4-turbo-preview
+  temperature: 0.7
+  top_p: 1.0
+  max_tokens: 2000
+  resume_generation_temperature: 0.5
+  cover_letter_temperature: 0.7
+job_sources:
+  linkedin:
+    enabled: false
+    max_results: 50
+    rate_limit_delay: 2.0
+    use_playwright: false
+    use_apify: false
+    use_mantiks: false
+    max_retries: 3
+    retry_delay: 1.0
+  indeed:
+    enabled: true
+    max_results: 50
+    rate_limit_delay: 3.0
+    use_scrapeops: true
+    use_hasdata: false
+    max_retries: 3
+    retry_delay: 2.0
+  wellfound:
+    enabled: true
+    max_results: 50
+    rate_limit_delay: 3.0
+    max_retries: 3
+    retry_delay: 1.0
+features:
+  enable_playwright: true
+  enable_auto_apply: false
+  enable_content_generation: true
+  enable_email_notifications: false
+scheduler:
+  enabled: true
+  run_frequency_hours: 24
+  run_at_time: 09:00
+content_prompts:
+  resume_summary: 'Generate 3-5 tailored bullet points for a resume based on the job
+    description.
+
+    Focus on matching the job requirements with relevant experience.
+
+    '
+  cover_letter_template: 'Write a professional cover letter for this position.
+
+    Keep it concise (200-300 words) and highlight relevant experience.
+
+    '
+  application_answers: 'Generate concise answers (50-100 words) to common application
+    questions
+
+    based on the job requirements and candidate profile.
+
+    '

@@ -166,7 +166,7 @@ class AgentLog(Base):
     
     # Context
     reasoning = Column(Text, nullable=True)  # Agent's reasoning/summary
-    metadata = Column(JSON, nullable=True)  # Additional structured data
+    extra_metadata = Column(JSON, nullable=True)  # Additional structured data
     
     # LLM usage tracking
     llm_model = Column(String(100), nullable=True)
