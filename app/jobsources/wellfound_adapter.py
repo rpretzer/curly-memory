@@ -150,8 +150,8 @@ class WellfoundAdapter(BaseJobSource):
             
         except Exception as e:
             logger.error(f"Error searching Wellfound: {e}", exc_info=True)
-            # Fallback to mock data on error
-            return self._generate_mock_jobs(query, location, remote, min(max_results, 5))
+            # Don't use mock data - raise error to indicate real scraping failed
+            raise Exception(f"Failed to scrape Wellfound jobs: {str(e)}. Please check network connectivity, rate limits, or website structure.")
     
     def _parse_job_card(self, card) -> Optional[JobListing]:
         """Parse a job card from Wellfound search results."""

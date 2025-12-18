@@ -39,12 +39,12 @@ llm:
   cover_letter_temperature: 0.7
 job_sources:
   linkedin:
-    enabled: false
+    enabled: true
     max_results: 50
-    rate_limit_delay: 2.0
-    use_playwright: false
-    use_apify: false
-    use_mantiks: false
+    rate_limit_delay: 3.0
+    use_playwright: true
+    use_apify: false  # Set to true and add APIFY_API_KEY to .env to use Apify service
+    use_mantiks: false  # Set to true and add MANTIKS_API_KEY to .env to use Mantiks service
     max_retries: 3
     retry_delay: 1.0
   indeed:

@@ -103,8 +103,9 @@ class LinkedInAdapter(BaseJobSource):
             logger.info("Attempting direct LinkedIn scraping (free, no API key required)")
             return self._scrape_with_requests(query, location, remote, max_results)
         except Exception as e:
-            logger.warning(f"Direct scraping failed: {e}, using mock data")
-            return self._generate_mock_jobs(query, location, remote, min(max_results, 5))
+            logger.error(f"Direct scraping failed: {e}", exc_info=True)
+            # Don't use mock data - raise error to indicate real scraping failed
+            raise Exception(f"Failed to scrape LinkedIn jobs: {str(e)}. LinkedIn requires authentication or a third-party API (Apify, Mantiks) for scraping. Enable one of these options in config.")
         
         # Uncomment below if you want to try Playwright scraping (requires LinkedIn login)
         # if not self.use_playwright:
@@ -191,10 +192,10 @@ class LinkedInAdapter(BaseJobSource):
             
         except ImportError:
             logger.error("Playwright not installed. Install with: pip install playwright && playwright install")
-            return self._generate_mock_jobs(query, location, remote, min(max_results, 5))
+            raise Exception("Playwright not installed. Required for LinkedIn scraping. Install with: pip install playwright && playwright install chromium")
         except Exception as e:
             logger.error(f"Error in Playwright scraping: {e}", exc_info=True)
-            return self._generate_mock_jobs(query, location, remote, min(max_results, 5))
+            raise Exception(f"Failed to scrape LinkedIn with Playwright: {str(e)}. Check Playwright installation and LinkedIn login requirements.")
     
     def _parse_linkedin_card(self, card, page) -> Optional[JobListing]:
         """Parse a job card from LinkedIn."""
