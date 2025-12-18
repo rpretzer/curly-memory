@@ -29,6 +29,7 @@ verticals:
 thresholds:
   min_relevance_score: 5
   high_relevance_score: 8
+  auto_approval_threshold: 8  # Jobs with score >= this will be auto-approved
 llm:
   model: gpt-4-turbo-preview
   temperature: 0.7

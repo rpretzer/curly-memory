@@ -49,6 +49,7 @@ class FilterAndScoreAgent:
         thresholds = config.get_thresholds()
         self.min_score = thresholds.get("min_relevance_score", 5.0)
         self.high_score = thresholds.get("high_relevance_score", 8.0)
+        self.auto_approval_threshold = thresholds.get("auto_approval_threshold", 8.0)
         
         # Get target verticals
         self.target_verticals = config.get_verticals()
@@ -393,6 +394,20 @@ class FilterAndScoreAgent:
                     job.status = JobStatus.SCORED
                     if run_id:
                         job.run_id = run_id
+                
+                # Auto-approve if score is above threshold
+                if score >= self.auto_approval_threshold:
+                    job.approved = True
+                    if self.log_agent and run_id:
+                        self.log_agent.log(
+                            agent_name=self.agent_name,
+                            status="info",
+                            message=f"Auto-approved job (score {score:.2f} >= {self.auto_approval_threshold})",
+                            run_id=run_id,
+                            job_id=job.id,
+                            step="auto_approve",
+                            metadata={"score": score, "threshold": self.auto_approval_threshold},
+                        )
                 
                 self.db.commit()
                 self.db.refresh(job)

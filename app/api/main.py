@@ -34,9 +34,28 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database...")
     init_db()
     logger.info("Database initialized")
+    
+    # Start scheduler if enabled
+    try:
+        from app.scheduling import get_scheduler
+        scheduler_config = config.get_scheduler_config()
+        if scheduler_config.get("enabled", True):
+            scheduler = get_scheduler()
+            scheduler.start()
+            logger.info("Scheduler started")
+    except Exception as e:
+        logger.warning(f"Could not start scheduler: {e}")
+    
     yield
     # Shutdown
     logger.info("Shutting down...")
+    try:
+        from app.scheduling import get_scheduler
+        scheduler = get_scheduler()
+        scheduler.stop()
+        logger.info("Scheduler stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping scheduler: {e}")
 
 
 app = FastAPI(
@@ -334,9 +353,10 @@ async def generate_content(job_id: int, background_tasks: BackgroundTasks, db: S
 async def apply_to_job(
     job_id: int,
     background_tasks: BackgroundTasks,
+    dry_run: bool = False,
     db: Session = Depends(get_db)
 ):
-    """Apply to a job (requires approval)."""
+    """Apply to a job (requires approval). Set dry_run=True to simulate without actually applying."""
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -344,7 +364,7 @@ async def apply_to_job(
     if not job.approved:
         raise HTTPException(status_code=400, detail="Job must be approved before applying")
     
-    if job.status == JobStatus.APPLICATION_COMPLETED:
+    if job.status == JobStatus.APPLICATION_COMPLETED and not dry_run:
         return {"status": "already_applied", "job_id": job_id}
     
     # Import apply agent
@@ -363,10 +383,14 @@ async def apply_to_job(
                 job=job,
                 run_id=None,
                 human_approval_required=True,
-                max_retries=2
+                max_retries=2,
+                dry_run=dry_run
             )
             if success:
-                logger.info(f"Successfully applied to job {job_id}")
+                if dry_run:
+                    logger.info(f"Dry-run successful for job {job_id}")
+                else:
+                    logger.info(f"Successfully applied to job {job_id}")
             else:
                 logger.warning(f"Failed to apply to job {job_id}: {job.application_error}")
         except Exception as e:
@@ -381,7 +405,8 @@ async def apply_to_job(
     return {
         "status": "started",
         "job_id": job_id,
-        "message": "Application process started. Check job status for updates."
+        "dry_run": dry_run,
+        "message": f"Application process started (dry_run={dry_run}). Check job status for updates."
     }
 
 
@@ -464,14 +489,52 @@ async def update_profile(update: UserProfileUpdate, db: Session = Depends(get_db
 
 @app.post("/profile/upload-resume")
 async def upload_resume(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Upload and parse resume document."""
+    """Upload and parse resume document (supports PDF, DOCX, DOC, TXT)."""
     try:
         import os
         from pathlib import Path
         
         # Read file content
         content = await file.read()
-        text_content = content.decode('utf-8', errors='ignore')
+        filename = file.filename.lower() if file.filename else ""
+        
+        # Extract text based on file type
+        text_content = ""
+        if filename.endswith('.pdf'):
+            try:
+                from PyPDF2 import PdfReader
+                import io
+                pdf_file = io.BytesIO(content)
+                pdf_reader = PdfReader(pdf_file)
+                text_parts = []
+                for page in pdf_reader.pages:
+                    text_parts.append(page.extract_text())
+                text_content = "\n".join(text_parts)
+            except ImportError:
+                logger.warning("PyPDF2 not installed, falling back to text extraction")
+                text_content = content.decode('utf-8', errors='ignore')
+            except Exception as e:
+                logger.warning(f"Error parsing PDF: {e}, falling back to text extraction")
+                text_content = content.decode('utf-8', errors='ignore')
+        elif filename.endswith(('.docx', '.doc')):
+            try:
+                from docx import Document
+                import io
+                doc_file = io.BytesIO(content)
+                doc = Document(doc_file)
+                text_parts = []
+                for para in doc.paragraphs:
+                    text_parts.append(para.text)
+                text_content = "\n".join(text_parts)
+            except ImportError:
+                logger.warning("python-docx not installed, falling back to text extraction")
+                text_content = content.decode('utf-8', errors='ignore')
+            except Exception as e:
+                logger.warning(f"Error parsing DOCX: {e}, falling back to text extraction")
+                text_content = content.decode('utf-8', errors='ignore')
+        else:
+            # Plain text file
+            text_content = content.decode('utf-8', errors='ignore')
         
         # Store resume file for use in applications
         resume_dir = Path("resumes")
@@ -504,6 +567,187 @@ async def upload_resume(file: UploadFile = File(...), db: Session = Depends(get_
         }
     except Exception as e:
         logger.error(f"Error uploading resume: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Scheduler endpoints
+@app.get("/scheduler/status")
+async def get_scheduler_status():
+    """Get scheduler status."""
+    try:
+        from app.scheduling import get_scheduler
+        scheduler = get_scheduler()
+        scheduler_config = config.get_scheduler_config()
+        return {
+            "enabled": scheduler_config.get("enabled", True),
+            "running": scheduler.running,
+            "frequency_hours": scheduler.frequency_hours,
+            "run_at_time": scheduler.run_at_time,
+        }
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/scheduler/start")
+async def start_scheduler():
+    """Start the scheduler."""
+    try:
+        from app.scheduling import get_scheduler
+        scheduler = get_scheduler()
+        scheduler.start()
+        return {"status": "started", "message": "Scheduler started successfully"}
+    except Exception as e:
+        logger.error(f"Error starting scheduler: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/scheduler/stop")
+async def stop_scheduler():
+    """Stop the scheduler."""
+    try:
+        from app.scheduling import get_scheduler
+        scheduler = get_scheduler()
+        scheduler.stop()
+        return {"status": "stopped", "message": "Scheduler stopped successfully"}
+    except Exception as e:
+        logger.error(f"Error stopping scheduler: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/scheduler/config")
+async def update_scheduler_config(
+    enabled: Optional[bool] = None,
+    frequency_hours: Optional[int] = None,
+    run_at_time: Optional[str] = None
+):
+    """Update scheduler configuration."""
+    try:
+        config_path = Path("config.yaml")
+        if config_path.exists():
+            with open(config_path, "r") as f:
+                yaml_config = yaml.safe_load(f) or {}
+        else:
+            yaml_config = {}
+        
+        if "scheduler" not in yaml_config:
+            yaml_config["scheduler"] = {}
+        
+        if enabled is not None:
+            yaml_config["scheduler"]["enabled"] = enabled
+        if frequency_hours is not None:
+            yaml_config["scheduler"]["run_frequency_hours"] = frequency_hours
+        if run_at_time is not None:
+            yaml_config["scheduler"]["run_at_time"] = run_at_time
+        
+        with open(config_path, "w") as f:
+            yaml.dump(yaml_config, f, default_flow_style=False)
+        
+        # Restart scheduler with new config
+        from app.scheduling import get_scheduler
+        scheduler = get_scheduler()
+        scheduler.stop()
+        scheduler.enabled = yaml_config["scheduler"].get("enabled", True)
+        scheduler.frequency_hours = yaml_config["scheduler"].get("run_frequency_hours", 24)
+        scheduler.run_at_time = yaml_config["scheduler"].get("run_at_time", "09:00")
+        if scheduler.enabled:
+            scheduler.start()
+        
+        return {"status": "updated", "config": yaml_config["scheduler"]}
+    except Exception as e:
+        logger.error(f"Error updating scheduler config: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Analytics endpoints
+@app.get("/analytics/applications")
+async def get_application_analytics(db: Session = Depends(get_db)):
+    """Get application analytics and success rates."""
+    try:
+        from sqlalchemy import func, case
+        from datetime import datetime, timedelta
+        
+        # Total applications
+        total_applied = db.query(func.count(Job.id)).filter(
+            Job.status.in_([JobStatus.APPLICATION_COMPLETED, JobStatus.APPLICATION_FAILED, JobStatus.APPLICATION_STARTED])
+        ).scalar() or 0
+        
+        # Successful applications
+        successful = db.query(func.count(Job.id)).filter(
+            Job.status == JobStatus.APPLICATION_COMPLETED
+        ).scalar() or 0
+        
+        # Failed applications
+        failed = db.query(func.count(Job.id)).filter(
+            Job.status == JobStatus.APPLICATION_FAILED
+        ).scalar() or 0
+        
+        # In progress
+        in_progress = db.query(func.count(Job.id)).filter(
+            Job.status == JobStatus.APPLICATION_STARTED
+        ).scalar() or 0
+        
+        # Success rate
+        success_rate = (successful / total_applied * 100) if total_applied > 0 else 0
+        
+        # Applications by source
+        apps_by_source = db.query(
+            Job.source,
+            func.count(Job.id).label('count'),
+            func.sum(case((Job.status == JobStatus.APPLICATION_COMPLETED, 1), else_=0)).label('successful')
+        ).filter(
+            Job.status.in_([JobStatus.APPLICATION_COMPLETED, JobStatus.APPLICATION_FAILED])
+        ).group_by(Job.source).all()
+        
+        source_stats = {}
+        for source, count, successful_count in apps_by_source:
+            source_stats[source.value if hasattr(source, 'value') else str(source)] = {
+                "total": count,
+                "successful": successful_count or 0,
+                "failed": count - (successful_count or 0),
+                "success_rate": ((successful_count or 0) / count * 100) if count > 0 else 0
+            }
+        
+        # Recent activity (last 7 days)
+        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        recent_applied = db.query(func.count(Job.id)).filter(
+            Job.application_started_at >= seven_days_ago
+        ).scalar() or 0
+        
+        recent_successful = db.query(func.count(Job.id)).filter(
+            Job.status == JobStatus.APPLICATION_COMPLETED,
+            Job.application_completed_at >= seven_days_ago
+        ).scalar() or 0
+        
+        # Average time to apply (for completed applications)
+        avg_time_query = db.query(
+            func.avg(
+                func.extract('epoch', Job.application_completed_at - Job.application_started_at)
+            )
+        ).filter(
+            Job.status == JobStatus.APPLICATION_COMPLETED,
+            Job.application_started_at.isnot(None),
+            Job.application_completed_at.isnot(None)
+        ).scalar()
+        
+        avg_apply_time_seconds = avg_time_query if avg_time_query else None
+        
+        return {
+            "total_applied": total_applied,
+            "successful": successful,
+            "failed": failed,
+            "in_progress": in_progress,
+            "success_rate": round(success_rate, 2),
+            "by_source": source_stats,
+            "recent_7_days": {
+                "total": recent_applied,
+                "successful": recent_successful,
+                "success_rate": round((recent_successful / recent_applied * 100) if recent_applied > 0 else 0, 2)
+            },
+            "average_apply_time_seconds": round(avg_apply_time_seconds, 2) if avg_apply_time_seconds else None
+        }
+    except Exception as e:
+        logger.error(f"Error getting application analytics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

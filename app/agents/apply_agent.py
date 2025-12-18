@@ -506,7 +506,8 @@ class ApplyAgent:
         application_data: Optional[Dict[str, Any]] = None,
         run_id: Optional[int] = None,
         human_approval_required: bool = True,
-        max_retries: int = 2
+        max_retries: int = 2,
+        dry_run: bool = False
     ) -> bool:
         """
         Apply to a job using the appropriate method with retry logic.
@@ -517,6 +518,7 @@ class ApplyAgent:
             run_id: Optional run ID for logging
             human_approval_required: Whether human approval is required (safety check)
             max_retries: Maximum number of retry attempts
+            dry_run: If True, simulate application without actually submitting
             
         Returns:
             True if application successful, False otherwise
@@ -525,7 +527,7 @@ class ApplyAgent:
             logger.warning(f"Job {job.id} not approved for application")
             return False
         
-        if job.status == JobStatus.APPLICATION_COMPLETED:
+        if job.status == JobStatus.APPLICATION_COMPLETED and not dry_run:
             logger.info(f"Job {job.id} already applied to")
             return True
         
@@ -543,6 +545,16 @@ class ApplyAgent:
         job.status = JobStatus.APPLICATION_STARTED
         job.application_started_at = datetime.utcnow()
         job.application_payload = payload
+        
+        # In dry-run mode, simulate success without actually applying
+        if dry_run:
+            logger.info(f"DRY-RUN: Simulating application to job {job.id}")
+            job.status = JobStatus.APPLICATION_COMPLETED
+            job.application_completed_at = datetime.utcnow()
+            job.application_error = None
+            self.db.commit()
+            return True
+        
         self.db.commit()
         
         success = False
