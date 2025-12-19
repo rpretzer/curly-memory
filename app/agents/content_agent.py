@@ -401,18 +401,40 @@ Provide a direct, professional answer that demonstrates relevant experience.
         """
         logger.info(f"Generating content for job: {job.id} - {job.title}")
         
+        errors = []
+        
         # Generate summary
-        job.llm_summary = self.generate_summary(job, run_id)
+        try:
+            job.llm_summary = self.generate_summary(job, run_id)
+        except Exception as e:
+            logger.error(f"Error generating summary for job {job.id}: {e}", exc_info=True)
+            errors.append(f"Summary generation failed: {str(e)}")
+            job.llm_summary = job.description[:500] if job.description else "Summary generation failed."
         
         # Generate resume points
-        job.tailored_resume_points = self.generate_resume_points(job, run_id)
+        try:
+            job.tailored_resume_points = self.generate_resume_points(job, run_id)
+        except Exception as e:
+            logger.error(f"Error generating resume points for job {job.id}: {e}", exc_info=True)
+            errors.append(f"Resume points generation failed: {str(e)}")
+            job.tailored_resume_points = []
         
         # Generate cover letter
-        job.cover_letter_draft = self.generate_cover_letter(job, run_id)
+        try:
+            job.cover_letter_draft = self.generate_cover_letter(job, run_id)
+        except Exception as e:
+            logger.error(f"Error generating cover letter for job {job.id}: {e}", exc_info=True)
+            errors.append(f"Cover letter generation failed: {str(e)}")
+            job.cover_letter_draft = ""
         
-        # Update status
+        # Update status - mark as generated (even if some parts failed, we have content)
         from app.models import JobStatus
         job.status = JobStatus.CONTENT_GENERATED
+        if errors:
+            logger.warning(f"Content generation completed with {len(errors)} errors for job {job.id}: {errors}")
+            job.application_error = "; ".join(errors)
+        else:
+            job.application_error = None
         
         self.db.commit()
         self.db.refresh(job)

@@ -335,18 +335,39 @@ async def generate_content(job_id: int, background_tasks: BackgroundTasks, db: S
     
     from app.agents.content_agent import ContentGenerationAgent
     from app.agents.log_agent import LogAgent
+    from app.models import JobStatus
     
     log_agent = LogAgent(db)
     content_agent = ContentGenerationAgent(db, log_agent=log_agent)
     
     async def generate():
         try:
-            content_agent.generate_all_content(job, run_id=job.run_id)
+            # Refresh job from database in this context
+            from app.db import get_db_context
+            with get_db_context() as db_session:
+                job = db_session.query(Job).filter(Job.id == job_id).first()
+                if not job:
+                    logger.error(f"Job {job_id} not found during content generation")
+                    return
+                
+                content_agent = ContentGenerationAgent(db_session, log_agent=LogAgent(db_session))
+                content_agent.generate_all_content(job, run_id=job.run_id)
+                logger.info(f"Content generation completed for job {job_id}")
         except Exception as e:
-            logger.error(f"Error generating content: {e}", exc_info=True)
+            logger.error(f"Fatal error generating content for job {job_id}: {e}", exc_info=True)
+            # Update job with error message
+            try:
+                from app.db import get_db_context
+                with get_db_context() as db_session:
+                    job = db_session.query(Job).filter(Job.id == job_id).first()
+                    if job:
+                        job.application_error = f"Content generation failed: {str(e)}"
+                        db_session.commit()
+            except Exception as db_error:
+                logger.error(f"Error updating job error message: {db_error}", exc_info=True)
     
     background_tasks.add_task(generate)
-    return {"status": "generating", "job_id": job_id}
+    return {"status": "generating", "job_id": job_id, "message": "Content generation started"}
 
 
 @app.post("/jobs/{job_id}/apply")
