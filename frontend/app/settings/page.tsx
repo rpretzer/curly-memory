@@ -191,6 +191,7 @@ interface Config {
   thresholds: {
     min_relevance_score?: number;
     high_relevance_score?: number;
+    auto_approval_threshold?: number;
   };
   content_prompts: {
     resume_summary?: string;
@@ -200,7 +201,7 @@ interface Config {
 }
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'profile' | 'search' | 'schedule' | 'prompts'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'search' | 'schedule' | 'prompts' | 'debug'>('profile');
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState(true);
@@ -406,6 +407,16 @@ export default function SettingsPage() {
                 }`}
               >
                 Content Prompts
+              </button>
+              <button
+                onClick={() => setActiveTab('debug')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'debug'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Debug & Stats
               </button>
             </nav>
           </div>
@@ -789,42 +800,83 @@ export default function SettingsPage() {
 
               <div>
                 <h3 className="text-xl font-semibold mb-4">Scoring Thresholds</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Relevance Score</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={config.thresholds?.min_relevance_score || 5.0}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          thresholds: {
-                            ...config.thresholds,
-                            min_relevance_score: parseFloat(e.target.value),
-                          },
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
-                    />
+                <div className="space-y-4">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-blue-800">
+                      <strong>Minimum Relevance Score:</strong> Jobs below this score are filtered out completely.
+                      Lower this value to see more jobs (useful for debugging).
+                    </p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">High Relevance Score</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={config.thresholds?.high_relevance_score || 8.0}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          thresholds: {
-                            ...config.thresholds,
-                            high_relevance_score: parseFloat(e.target.value),
-                          },
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Minimum Relevance Score (0-10)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={config.thresholds?.min_relevance_score || 5.0}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            thresholds: {
+                              ...config.thresholds,
+                              min_relevance_score: parseFloat(e.target.value),
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Jobs below this score are filtered out</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        High Relevance Score (0-10)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={config.thresholds?.high_relevance_score || 8.0}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            thresholds: {
+                              ...config.thresholds,
+                              high_relevance_score: parseFloat(e.target.value),
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Used for categorization</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Auto-Approval Threshold (0-10)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={config.thresholds?.auto_approval_threshold || 8.0}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            thresholds: {
+                              ...config.thresholds,
+                              auto_approval_threshold: parseFloat(e.target.value),
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Jobs at/above this score are auto-approved</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -844,6 +896,11 @@ export default function SettingsPage() {
           {/* Schedule Tab */}
           {activeTab === 'schedule' && (
             <ScheduleForm />
+          )}
+
+          {/* Debug Tab */}
+          {activeTab === 'debug' && (
+            <DebugStatsTab />
           )}
 
           {/* Prompts Tab */}

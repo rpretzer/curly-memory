@@ -659,6 +659,64 @@ async def update_scheduler_config(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Debug endpoints
+@app.get("/debug/scraping-stats")
+async def get_scraping_stats(db: Session = Depends(get_db)):
+    """Get debugging information about scraping results."""
+    try:
+        from app.models import Job, Run, JobStatus
+        from sqlalchemy import func, desc
+        
+        # Get latest run
+        latest_run = db.query(Run).order_by(desc(Run.id)).first()
+        if not latest_run:
+            return {"error": "No runs found"}
+        
+        # Get all jobs from latest run (before and after filtering)
+        all_jobs = db.query(Job).filter(Job.run_id == latest_run.id).all()
+        
+        # Count jobs by source
+        jobs_by_source = {}
+        jobs_by_status = {}
+        score_distribution = []
+        
+        for job in all_jobs:
+            source = job.source.value if hasattr(job.source, 'value') else str(job.source)
+            jobs_by_source[source] = jobs_by_source.get(source, 0) + 1
+            
+            status = job.status.value if hasattr(job.status, 'value') else str(job.status)
+            jobs_by_status[status] = jobs_by_status.get(status, 0) + 1
+            
+            if job.relevance_score is not None:
+                score_distribution.append({
+                    "id": job.id,
+                    "title": job.title,
+                    "score": job.relevance_score,
+                    "source": source,
+                    "status": status,
+                })
+        
+        # Sort by score
+        score_distribution.sort(key=lambda x: x["score"], reverse=True)
+        
+        return {
+            "latest_run_id": latest_run.id,
+            "run_status": latest_run.status.value if hasattr(latest_run.status, 'value') else str(latest_run.status),
+            "jobs_found": latest_run.jobs_found,
+            "jobs_scored": latest_run.jobs_scored,
+            "jobs_above_threshold": latest_run.jobs_above_threshold,
+            "total_jobs_in_db": len(all_jobs),
+            "jobs_by_source": jobs_by_source,
+            "jobs_by_status": jobs_by_status,
+            "score_distribution": score_distribution[:50],  # Top 50 by score
+            "min_score": config.get_thresholds().get("min_relevance_score", 5.0),
+            "auto_approval_threshold": config.get_thresholds().get("auto_approval_threshold", 8.0),
+        }
+    except Exception as e:
+        logger.error(f"Error getting scraping stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Analytics endpoints
 @app.get("/analytics/applications")
 async def get_application_analytics(db: Session = Depends(get_db)):
