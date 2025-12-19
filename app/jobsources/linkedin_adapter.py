@@ -173,6 +173,214 @@ class LinkedInAdapter(BaseJobSource):
             logger.error(f"Error logging into LinkedIn: {e}", exc_info=True)
             return False
     
+    def get_hiring_connections(
+        self,
+        max_connections: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Crawl LinkedIn connections to identify who is hiring.
+        
+        Args:
+            max_connections: Maximum number of connections to check
+            
+        Returns:
+            List of dictionaries with connection info and hiring status
+        """
+        if not self.use_playwright:
+            raise Exception("Playwright required for connection crawling. Enable use_playwright in config.")
+        
+        if not self.linkedin_email or not self.linkedin_password:
+            raise Exception("LinkedIn credentials required for connection crawling. Set LINKEDIN_EMAIL and LINKEDIN_PASSWORD in .env")
+        
+        try:
+            from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+            
+            logger.info("=== STARTING LINKEDIN CONNECTION CRAWLING ===")
+            
+            if not self._playwright:
+                self._playwright = sync_playwright().start()
+                self._browser = self._playwright.chromium.launch(headless=False)
+            
+            page = self._browser.new_page()
+            page.set_extra_http_headers({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            })
+            
+            # Login first
+            if not self._logged_in:
+                self._login_linkedin(page)
+            
+            if not self._logged_in:
+                raise Exception("Failed to login to LinkedIn")
+            
+            # Navigate to connections page
+            logger.info("Navigating to LinkedIn connections...")
+            connections_url = f"{self.base_url}/mynetwork/invite-connect/connections/"
+            page.goto(connections_url, wait_until='networkidle', timeout=30000)
+            time.sleep(3)
+            
+            hiring_connections = []
+            connections_checked = 0
+            scroll_attempts = 0
+            max_scrolls = 20
+            
+            logger.info("Starting to scroll through connections...")
+            
+            while connections_checked < max_connections and scroll_attempts < max_scrolls:
+                # Find connection cards
+                # LinkedIn connections page uses various selectors
+                connection_selectors = [
+                    'li.reusable-search__result-container',
+                    'div.entity-result',
+                    'li.mn-connection-card',
+                    'div.mn-connection-card',
+                ]
+                
+                connection_cards = []
+                for selector in connection_selectors:
+                    found = page.query_selector_all(selector)
+                    if found:
+                        connection_cards = found
+                        logger.info(f"Found {len(connection_cards)} connection cards using selector: {selector}")
+                        break
+                
+                if not connection_cards:
+                    logger.warning("No connection cards found, scrolling...")
+                    page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    time.sleep(2)
+                    scroll_attempts += 1
+                    continue
+                
+                # Process each connection card
+                for card in connection_cards:
+                    if connections_checked >= max_connections:
+                        break
+                    
+                    try:
+                        connection_info = self._parse_connection_card(card, page)
+                        if connection_info:
+                            connections_checked += 1
+                            
+                            # Check if their company is hiring
+                            if connection_info.get('company'):
+                                hiring_status = self._check_company_hiring(page, connection_info['company'])
+                                if hiring_status.get('is_hiring'):
+                                    connection_info['hiring_info'] = hiring_status
+                                    hiring_connections.append(connection_info)
+                                    logger.info(f"Found hiring connection: {connection_info.get('name')} @ {connection_info.get('company')}")
+                    except Exception as e:
+                        logger.warning(f"Error processing connection card: {e}")
+                        continue
+                
+                # Scroll to load more connections
+                if connections_checked < max_connections:
+                    page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    time.sleep(2)
+                    scroll_attempts += 1
+                else:
+                    break
+            
+            page.close()
+            logger.info(f"=== CONNECTION CRAWLING COMPLETE ===")
+            logger.info(f"Checked {connections_checked} connections, found {len(hiring_connections)} hiring")
+            
+            return hiring_connections
+            
+        except ImportError:
+            raise Exception("Playwright not installed. Install with: pip install playwright && playwright install")
+        except Exception as e:
+            logger.error(f"Error in connection crawling: {e}", exc_info=True)
+            raise Exception(f"Failed to crawl LinkedIn connections: {str(e)}")
+    
+    def _parse_connection_card(self, card, page) -> Optional[Dict[str, Any]]:
+        """Parse a connection card to extract connection info."""
+        try:
+            # Extract name
+            name = None
+            name_selectors = [
+                'span.entity-result__title-text a',
+                'a.app-aware-link',
+                'span.actor-name-with-distance',
+            ]
+            for selector in name_selectors:
+                try:
+                    elem = card.query_selector(selector)
+                    if elem:
+                        name = elem.inner_text().strip()
+                        break
+                except:
+                    continue
+            
+            # Extract company
+            company = None
+            company_selectors = [
+                'div.entity-result__primary-subtitle',
+                'span.entity-result__subtitle',
+                '.t-14.t-black--light',
+            ]
+            for selector in company_selectors:
+                try:
+                    elem = card.query_selector(selector)
+                    if elem:
+                        company = elem.inner_text().strip()
+                        break
+                except:
+                    continue
+            
+            # Extract profile URL
+            profile_url = None
+            try:
+                link = card.query_selector('a[href*="/in/"]')
+                if link:
+                    href = link.get_attribute('href')
+                    if href:
+                        if href.startswith('/'):
+                            profile_url = f"{self.base_url}{href}"
+                        elif href.startswith('http'):
+                            profile_url = href
+            except:
+                pass
+            
+            if name:
+                return {
+                    'name': name,
+                    'company': company,
+                    'profile_url': profile_url,
+                }
+            return None
+        except Exception as e:
+            logger.warning(f"Error parsing connection card: {e}")
+            return None
+    
+    def _check_company_hiring(self, page, company_name: str) -> Dict[str, Any]:
+        """Check if a company is currently hiring by searching for jobs."""
+        try:
+            # Search for jobs at this company
+            jobs_url = f"{self.base_url}/jobs/search/?keywords=&location=&f_C={company_name.replace(' ', '%20')}"
+            
+            # Open in new tab to check
+            new_page = self._browser.new_page()
+            new_page.goto(jobs_url, wait_until='networkidle', timeout=15000)
+            time.sleep(2)
+            
+            # Check for job listings
+            job_count = 0
+            try:
+                job_elements = new_page.query_selector_all('div[data-job-id]')
+                job_count = len(job_elements)
+            except:
+                pass
+            
+            new_page.close()
+            
+            return {
+                'is_hiring': job_count > 0,
+                'job_count': job_count,
+            }
+        except Exception as e:
+            logger.debug(f"Error checking if {company_name} is hiring: {e}")
+            return {'is_hiring': False, 'job_count': 0, 'error': str(e)}
+    
     def _scrape_with_playwright(
         self,
         query: str,

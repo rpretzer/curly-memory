@@ -688,6 +688,35 @@ async def update_scheduler_config(
 
 
 # Debug endpoints
+@app.get("/linkedin/hiring-connections")
+async def get_hiring_connections(
+    max_connections: int = 100,
+    db: Session = Depends(get_db)
+):
+    """Get LinkedIn connections who are hiring."""
+    try:
+        from app.agents.search_agent import SearchAgent
+        from app.agents.log_agent import LogAgent
+        
+        log_agent = LogAgent(db)
+        search_agent = SearchAgent(db, log_agent=log_agent)
+        
+        if 'linkedin' not in search_agent.sources:
+            raise HTTPException(status_code=400, detail="LinkedIn source not enabled")
+        
+        linkedin_adapter = search_agent.sources['linkedin']
+        hiring_connections = linkedin_adapter.get_hiring_connections(max_connections=max_connections)
+        
+        return {
+            "status": "success",
+            "connections_checked": len(hiring_connections),
+            "hiring_connections": hiring_connections,
+        }
+    except Exception as e:
+        logger.error(f"Error getting hiring connections: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/debug/scraping-stats")
 async def get_scraping_stats(db: Session = Depends(get_db)):
     """Get debugging information about scraping results."""
