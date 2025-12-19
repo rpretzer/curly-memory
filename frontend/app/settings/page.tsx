@@ -195,6 +195,14 @@ interface Config {
   };
   content_prompts: {
     resume_summary?: string;
+  };
+  job_sources?: {
+    linkedin?: {
+      linkedin_email?: string;
+      linkedin_password?: string;
+      [key: string]: any;
+    };
+    [key: string]: any;
     cover_letter_template?: string;
     application_answers?: string;
   };
