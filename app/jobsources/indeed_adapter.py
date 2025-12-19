@@ -856,17 +856,65 @@ class IndeedAdapter(BaseJobSource):
         max_results: int
     ) -> List[JobListing]:
         """Search using ScrapeOps API."""
-        raw_jobs = self.scrapeops_api.search_jobs(query, location, remote, max_results)
+        raw_response = self.scrapeops_api.search_jobs(query, location, remote, max_results)
+        
         jobs = []
         
-        for raw_job in raw_jobs:
-            try:
-                job = self._normalize_scrapeops_job(raw_job)
-                if job:
-                    jobs.append(job)
-            except Exception as e:
-                logger.warning(f"Error normalizing ScrapeOps job: {e}")
-                continue
+        # ScrapeOps returns HTML, not JSON jobs
+        if raw_response and isinstance(raw_response, list) and len(raw_response) > 0:
+            html_item = raw_response[0]
+            if isinstance(html_item, dict) and html_item.get('scrapeops_html'):
+                # Parse the HTML response
+                html_content = html_item.get('html_content', '')
+                logger.info(f"Parsing ScrapeOps HTML response ({len(html_content)} chars)")
+                
+                soup = BeautifulSoup(html_content, 'html.parser')
+                
+                # Use the same parsing logic as direct scraping
+                job_cards = []
+                selectors = [
+                    ('div', {'data-jk': True}),
+                    ('div', {'class': 'job_seen_beacon'}),
+                    ('div', {'class': 'slider_container'}),
+                    ('td', {'data-jk': True}),
+                    ('a', {'data-jk': True}),
+                ]
+                
+                for tag, attrs in selectors:
+                    found = soup.find_all(tag, attrs)
+                    if found:
+                        job_cards = found
+                        logger.info(f"Found {len(job_cards)} job cards in ScrapeOps HTML using selector: {tag}")
+                        break
+                
+                # If no cards found, try generic link approach
+                if not job_cards:
+                    job_links = soup.find_all('a', href=re.compile(r'/viewjob|jk='))
+                    if job_links:
+                        job_cards = job_links
+                        logger.info(f"Found {len(job_cards)} job links in ScrapeOps HTML")
+                
+                # Parse each job card
+                for card in job_cards[:max_results]:
+                    try:
+                        job = self._parse_job_card(card)
+                        if job:
+                            jobs.append(job)
+                    except Exception as e:
+                        logger.warning(f"Error parsing ScrapeOps job card: {e}")
+                        continue
+                
+                logger.info(f"Successfully parsed {len(jobs)} jobs from ScrapeOps HTML")
+            else:
+                # Old JSON format (if ScrapeOps ever returns JSON)
+                for raw_job in raw_response:
+                    try:
+                        job = self._normalize_scrapeops_job(raw_job)
+                        if job:
+                            jobs.append(job)
+                    except Exception as e:
+                        logger.warning(f"Error normalizing ScrapeOps job: {e}")
+                        continue
         
         return jobs
     

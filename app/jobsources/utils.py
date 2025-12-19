@@ -204,29 +204,23 @@ class ScrapeOpsAPI(ThirdPartyAPI):
             'url': indeed_url,
         }
         
+        # ScrapeOps proxy endpoint is just /v1, not /v1/scrape
+        # It returns HTML directly, which we need to parse
         response = self.session.get(
-            f"{self.base_url}/scrape",
+            self.base_url,  # Already includes /v1
             params=params,
             timeout=30
         )
         response.raise_for_status()
         
-        data = response.json()
-        # ScrapeOps returns data in different formats - try multiple paths
-        jobs = []
-        if isinstance(data, dict):
-            # Try common response formats
-            jobs = (
-                data.get('results', {}).get('jobs', []) or
-                data.get('jobs', []) or
-                data.get('data', {}).get('jobs', []) or
-                data.get('body', {}).get('jobs', []) or
-                []
-            )
+        # ScrapeOps returns HTML directly - return it as raw HTML
+        # The IndeedAdapter will parse it using its existing parsing logic
+        # We return a special format that indicates this is HTML to parse
+        logger.info(f"ScrapeOps returned HTML response ({len(response.text)} chars)")
         
-        # If no jobs found in structured format, the HTML is in the response
-        # We'd need to parse it, but for now return what we found
-        return jobs[:max_results] if jobs else []
+        # Return the HTML content in a format the adapter can handle
+        # We'll return it as a dict with the HTML content
+        return [{'html_content': response.text, 'scrapeops_html': True}]
 
 
 class HasDataAPI(ThirdPartyAPI):
