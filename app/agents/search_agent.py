@@ -4,7 +4,7 @@ import logging
 from typing import List, Dict, Optional, Any
 from sqlalchemy.orm import Session
 
-from app.jobsources import LinkedInAdapter, IndeedAdapter, WellfoundAdapter
+from app.jobsources import LinkedInAdapter, IndeedAdapter, WellfoundAdapter, MonsterAdapter
 from app.jobsources.base import JobListing
 from app.config import config
 from app.agents.log_agent import LogAgent
@@ -68,6 +68,17 @@ class SearchAgent:
             self.sources["wellfound"] = WellfoundAdapter(
                 config=wellfound_config,
                 api_key=config.wellfound_api_key
+            )
+        
+        # Monster / Ohio Means Jobs
+        if job_sources_config.get("monster", {}).get("enabled", False):
+            monster_config = job_sources_config.get("monster", {})
+            # Add third-party API keys to config if available
+            if config.scrapeops_api_key:
+                monster_config["scrapeops_api_key"] = config.scrapeops_api_key
+            self.sources["monster"] = MonsterAdapter(
+                config=monster_config,
+                api_key=None  # Monster doesn't have API key
             )
         
         # Monster / Ohio Means Jobs

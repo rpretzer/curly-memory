@@ -4,6 +4,7 @@ from app.jobsources.base import BaseJobSource, JobListing
 from app.jobsources.linkedin_adapter import LinkedInAdapter
 from app.jobsources.indeed_adapter import IndeedAdapter
 from app.jobsources.wellfound_adapter import WellfoundAdapter
+from app.jobsources.monster_adapter import MonsterAdapter
 
 __all__ = [
     "BaseJobSource",
@@ -11,4 +12,5 @@ __all__ = [
     "LinkedInAdapter",
     "IndeedAdapter",
     "WellfoundAdapter",
+    "MonsterAdapter",
 ]
