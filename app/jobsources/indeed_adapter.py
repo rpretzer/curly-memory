@@ -148,26 +148,56 @@ class IndeedAdapter(BaseJobSource):
                     
                     soup = BeautifulSoup(response.content, 'html.parser')
                     
-                    # Try multiple selectors for Indeed's job cards
-                    job_cards = (
-                        soup.find_all('div', {'data-jk': True}) or
-                        soup.find_all('div', class_='job_seen_beacon') or
-                        soup.find_all('div', class_='slider_container') or
-                        soup.find_all('td', {'data-jk': True})
-                    )
+                    # Try multiple selectors for Indeed's job cards (try each until we find results)
+                    job_cards = []
+                    selectors = [
+                        ('div', {'data-jk': True}),
+                        ('div', {'class': 'job_seen_beacon'}),
+                        ('div', {'class': 'slider_container'}),
+                        ('td', {'data-jk': True}),
+                        ('div', {'class': 'job_seen_beacon'}),
+                        ('a', {'data-jk': True}),
+                        ('div', {'id': lambda x: x and 'job_' in x}),
+                    ]
+                    
+                    for tag, attrs in selectors:
+                        found = soup.find_all(tag, attrs)
+                        if found:
+                            job_cards = found
+                            logger.info(f"Found {len(job_cards)} job cards using selector: {tag} with {attrs}")
+                            break
                     
                     if not job_cards:
-                        logger.warning("No job cards found on Indeed page - Indeed may have changed their HTML structure")
-                        break
+                        # Try a more generic approach - look for links containing /viewjob
+                        job_links = soup.find_all('a', href=re.compile(r'/viewjob|jk='))
+                        if job_links:
+                            logger.info(f"Found {len(job_links)} job links using generic approach")
+                            # Create minimal card objects from links - wrap them in a div-like structure
+                            job_cards = job_links[:max_results]
+                            # We'll need special parsing for these
+                        else:
+                            logger.warning(f"No job cards found on Indeed page (start={start}). Page length: {len(response.text)} chars")
+                            # Log a sample of the HTML for debugging
+                            if start == 0:  # Only log for first page
+                                # Save response for debugging
+                                logger.error(f"Indeed page structure may have changed. Response status: {response.status_code}, URL: {response.url}")
+                            break
                     
+                    logger.info(f"Processing {len(job_cards)} job cards from page (already have {len(jobs)} jobs)")
+                    parsed_count = 0
                     for card in job_cards[:min(results_per_page, max_results - len(jobs))]:
                         try:
                             job = self._parse_job_card(card)
                             if job:
                                 jobs.append(job)
+                                parsed_count += 1
+                            else:
+                                logger.debug(f"Job card parsed but returned None")
                         except Exception as e:
-                            logger.warning(f"Error parsing job card: {e}")
+                            logger.warning(f"Error parsing job card: {e}", exc_info=True)
                             continue
+                    
+                    logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards")
                     
                     # Check if there are more pages
                     if len(job_cards) < results_per_page:
@@ -192,6 +222,10 @@ class IndeedAdapter(BaseJobSource):
     def _parse_job_card(self, card) -> Optional[JobListing]:
         """Parse a job card from Indeed search results with multiple selector fallbacks."""
         try:
+            # If card is a link element (from fallback parsing), handle it differently
+            if hasattr(card, 'name') and card.name == 'a' and card.get('href'):
+                return self._parse_job_from_link(card)
+            
             # Extract job ID - try multiple attributes
             job_id = (
                 card.get('data-jk', '') or
@@ -299,7 +333,60 @@ class IndeedAdapter(BaseJobSource):
                 metadata={"job_id": job_id}
             )
         except Exception as e:
-            logger.warning(f"Error parsing Indeed job card: {e}")
+            logger.warning(f"Error parsing Indeed job card: {e}", exc_info=True)
+            return None
+    
+    def _parse_job_from_link(self, link) -> Optional[JobListing]:
+        """Parse job information from a link element (fallback method)."""
+        try:
+            href = link.get('href', '')
+            # Extract job ID from URL
+            job_id_match = re.search(r'jk=([^&]+)', href)
+            job_id = job_id_match.group(1) if job_id_match else None
+            
+            # Get title from link text or parent
+            title = link.get_text(strip=True) or "Unknown Title"
+            
+            # Try to find company and location in nearby elements
+            parent = link.parent
+            company = "Unknown Company"
+            location = None
+            
+            # Look for company name nearby
+            if parent:
+                company_elem = parent.find('span', class_=re.compile('company', re.I)) or parent.find('div', class_=re.compile('company', re.I))
+                if company_elem:
+                    company = company_elem.get_text(strip=True)
+                
+                location_elem = parent.find('div', class_=re.compile('location', re.I)) or parent.find('span', class_=re.compile('location', re.I))
+                if location_elem:
+                    location = location_elem.get_text(strip=True)
+            
+            # Build URL
+            if href.startswith('/'):
+                url = urljoin(self.base_url, href)
+            elif href.startswith('http'):
+                url = href
+            elif job_id:
+                url = f"{self.base_url}/viewjob?jk={job_id}"
+            else:
+                return None  # Can't build valid URL
+            
+            # Extract keywords from title
+            keywords = self.extract_keywords(title)
+            
+            return JobListing(
+                title=title,
+                company=company,
+                location=location,
+                source="indeed",
+                source_url=url,
+                description=None,  # Would need to fetch full page for description
+                keywords=keywords,
+                application_type="unknown",
+            )
+        except Exception as e:
+            logger.warning(f"Error parsing job from link: {e}", exc_info=True)
             return None
     
     def _parse_salary(self, salary_text: Optional[str]) -> tuple[Optional[int], Optional[int]]:
