@@ -19,7 +19,7 @@ class LLMConfig(BaseSettings):
     )
     
     api_key: str = Field(..., validation_alias="OPENAI_API_KEY")
-    model: str = Field(default="gpt-4-turbo-preview", env="LLM_MODEL")
+    model: str = Field(default="gpt-4o-mini", env="LLM_MODEL")  # Updated from gpt-4-turbo-preview (deprecated)
     temperature: float = Field(default=0.7, env="LLM_TEMPERATURE")
     top_p: float = Field(default=1.0, env="LLM_TOP_P")
     max_tokens: int = Field(default=2000, env="LLM_MAX_TOKENS")
