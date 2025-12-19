@@ -355,23 +355,38 @@ class LinkedInAdapter(BaseJobSource):
     def _check_company_hiring(self, page, company_name: str) -> Dict[str, Any]:
         """Check if a company is currently hiring by searching for jobs."""
         try:
-            # Search for jobs at this company
-            jobs_url = f"{self.base_url}/jobs/search/?keywords=&location=&f_C={company_name.replace(' ', '%20')}"
+            # Search for jobs at this company using LinkedIn job search
+            # Use URL encoding for company name
+            from urllib.parse import quote
+            encoded_company = quote(company_name)
+            jobs_url = f"{self.base_url}/jobs/search/?keywords=&location=&f_C={encoded_company}"
             
-            # Open in new tab to check
-            new_page = self._browser.new_page()
-            new_page.goto(jobs_url, wait_until='networkidle', timeout=15000)
+            # Use the existing page but save current URL
+            current_url = page.url
+            
+            # Navigate to company jobs page
+            page.goto(jobs_url, wait_until='networkidle', timeout=15000)
             time.sleep(2)
             
             # Check for job listings
             job_count = 0
             try:
-                job_elements = new_page.query_selector_all('div[data-job-id]')
+                job_elements = page.query_selector_all('div[data-job-id]')
                 job_count = len(job_elements)
+                # Also check for job count text (e.g., "123 jobs")
+                job_count_text = page.query_selector('.jobs-search-results-list__text, .results-context-header__job-count')
+                if job_count_text:
+                    text = job_count_text.inner_text()
+                    import re
+                    numbers = re.findall(r'\d+', text)
+                    if numbers:
+                        job_count = max(job_count, int(numbers[0]))
             except:
                 pass
             
-            new_page.close()
+            # Go back to connections page
+            page.goto(current_url, wait_until='networkidle', timeout=15000)
+            time.sleep(1)
             
             return {
                 'is_hiring': job_count > 0,
