@@ -489,12 +489,28 @@ class IndeedAdapter(BaseJobSource):
             
             if not self._playwright:
                 self._playwright = sync_playwright().start()
-                self._browser = self._playwright.chromium.launch(headless=True)
+                # Launch with stealth settings to avoid detection
+                self._browser = self._playwright.chromium.launch(
+                    headless=False,  # Use non-headless to avoid detection
+                    args=['--disable-blink-features=AutomationControlled']
+                )
             
             page = self._browser.new_page()
+            # Set realistic headers to avoid detection
             page.set_extra_http_headers({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
             })
+            # Remove webdriver flag
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            """)
             
             # Build search URL
             search_url = f"{self.base_url}/jobs"
@@ -513,8 +529,23 @@ class IndeedAdapter(BaseJobSource):
             url = f"{search_url}?{param_str}"
             
             logger.info(f"Navigating to Indeed with Playwright: {url}")
-            page.goto(url, wait_until='networkidle', timeout=30000)
-            time.sleep(3)  # Wait for JavaScript to render job listings
+            # Use 'load' instead of 'networkidle' - Indeed may have continuous network activity
+            try:
+                page.goto(url, wait_until='load', timeout=60000)
+                logger.info("Page loaded, waiting for JavaScript to render...")
+            except Exception as e:
+                logger.warning(f"Page load timeout, but continuing anyway: {e}")
+                # Page may have partially loaded
+            
+            # Give time for JavaScript to render
+            time.sleep(8)  # Increased wait time for JS rendering
+            
+            # Wait for page to be interactive
+            try:
+                page.wait_for_load_state('domcontentloaded', timeout=5000)
+            except:
+                logger.debug("domcontentloaded timeout (may be OK)")
+                pass
             
             jobs = []
             page_num = 0
@@ -523,34 +554,75 @@ class IndeedAdapter(BaseJobSource):
             while len(jobs) < max_results and page_num < max_pages:
                 logger.info(f"=== PLAYWRIGHT PAGE {page_num + 1} ===")
                 
-                # Wait for job cards to appear (Indeed uses various selectors)
-                try:
-                    page.wait_for_selector('div[data-jk], a[href*="/viewjob"], .job_seen_beacon, .jobCard', timeout=10000)
-                except PlaywrightTimeout:
-                    logger.warning("Timeout waiting for job cards to appear")
-                    if page_num == 0:  # If first page has no cards, likely blocked or no results
-                        break
-                    else:
-                        page_num += 1
-                        continue
-                
-                # Try multiple selectors for job cards
-                job_cards = []
-                selectors = [
+                # Try to wait for any job-related elements (try multiple selectors)
+                job_found = False
+                selectors_to_wait = [
                     'div[data-jk]',
                     'a[href*="/viewjob"]',
                     '.job_seen_beacon',
-                    '.slider_container',
                     '.jobCard',
-                    'div[class*="job"]',
+                    'div[id*="job"]',
+                    'ul.resultsList',
+                    '[data-testid*="job"]',
+                ]
+                
+                for selector in selectors_to_wait:
+                    try:
+                        page.wait_for_selector(selector, timeout=5000)
+                        logger.info(f"Found page element with selector: {selector}")
+                        job_found = True
+                        break
+                    except PlaywrightTimeout:
+                        continue
+                
+                if not job_found and page_num == 0:
+                    logger.warning("No job-related elements found, page may be blocked or have no results")
+                    # Try to get page title to see what we got
+                    try:
+                        title = page.title()
+                        logger.info(f"Page title: {title}")
+                    except:
+                        pass
+                    break
+                
+                # Try multiple selectors for job cards - Indeed uses various structures
+                job_cards = []
+                selectors = [
+                    'div[data-jk]',  # Primary selector
+                    'a[href*="/viewjob"]',  # Job links
+                    'a[href*="/viewjob?jk="]',  # More specific job links
+                    '.job_seen_beacon',  # Job card container
+                    '.jobCard',  # Job card class
+                    'div[class*="job"]',  # Any div with "job" in class
+                    'div[class*="result"]',  # Result containers
+                    'li[data-jk]',  # List items with job ID
+                    'div[id*="job_"]',  # Divs with job ID in id
+                    '[data-testid*="job"]',  # Elements with job test ID
                 ]
                 
                 for selector in selectors:
-                    found = page.query_selector_all(selector)
-                    if found:
-                        job_cards = found
-                        logger.info(f"Found {len(job_cards)} job cards using selector: {selector}")
-                        break
+                    try:
+                        found = page.query_selector_all(selector)
+                        if found and len(found) > 0:
+                            job_cards = found
+                            logger.info(f"✓ Found {len(job_cards)} job cards using selector: {selector}")
+                            break
+                    except Exception as e:
+                        logger.debug(f"Selector {selector} failed: {e}")
+                        continue
+                
+                # If still no cards, try getting all links and filtering
+                if not job_cards:
+                    logger.info("Trying alternative: looking for all links with /viewjob")
+                    all_links = page.query_selector_all('a[href]')
+                    viewjob_links = []
+                    for link in all_links:
+                        href = link.get_attribute('href') or ''
+                        if '/viewjob' in href or 'jk=' in href:
+                            viewjob_links.append(link)
+                    if viewjob_links:
+                        job_cards = viewjob_links
+                        logger.info(f"✓ Found {len(job_cards)} job links via alternative method")
                 
                 if not job_cards:
                     logger.warning(f"No job cards found on page {page_num + 1}")
