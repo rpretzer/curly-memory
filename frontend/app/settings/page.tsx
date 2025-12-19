@@ -983,3 +983,171 @@ export default function SettingsPage() {
   );
 }
 
+// Debug Stats Component
+function DebugStatsTab() {
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const fetchStats = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('/api/debug/scraping-stats');
+      setStats(response.data);
+      setError(null);
+    } catch (err: any) {
+      console.error('Error fetching debug stats:', err);
+      setError(err.response?.data?.detail || 'Failed to load debug stats');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <p>Loading debug statistics...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-800">Error: {error}</p>
+          <button
+            onClick={fetchStats}
+            className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <p>No statistics available. Run a job search first.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white shadow rounded-lg p-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Scraping Debug & Statistics</h2>
+        <button
+          onClick={fetchStats}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="text-sm text-blue-600 font-medium">Jobs Found</div>
+          <div className="text-2xl font-bold text-blue-900">{stats.jobs_found || 0}</div>
+          <div className="text-xs text-blue-700 mt-1">From latest run</div>
+        </div>
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="text-sm text-green-600 font-medium">Jobs Scored</div>
+          <div className="text-2xl font-bold text-green-900">{stats.jobs_scored || 0}</div>
+          <div className="text-xs text-green-700 mt-1">After scoring</div>
+        </div>
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+          <div className="text-sm text-purple-600 font-medium">Above Threshold</div>
+          <div className="text-2xl font-bold text-purple-900">{stats.jobs_above_threshold || 0}</div>
+          <div className="text-xs text-purple-700 mt-1">Min score: {stats.min_score}</div>
+        </div>
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="text-sm text-yellow-600 font-medium">Total in DB</div>
+          <div className="text-2xl font-bold text-yellow-900">{stats.total_jobs_in_db || 0}</div>
+          <div className="text-xs text-yellow-700 mt-1">For latest run</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <h3 className="text-lg font-semibold mb-3">Jobs by Source</h3>
+          <div className="space-y-2">
+            {stats.jobs_by_source && Object.entries(stats.jobs_by_source).map(([source, count]) => (
+              <div key={source} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                <span className="font-medium capitalize">{source}</span>
+                <span className="text-gray-700">{count as number}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-semibold mb-3">Jobs by Status</h3>
+          <div className="space-y-2">
+            {stats.jobs_by_status && Object.entries(stats.jobs_by_status).map(([status, count]) => (
+              <div key={status} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                <span className="font-medium capitalize">{status.replace('_', ' ')}</span>
+                <span className="text-gray-700">{count as number}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-lg font-semibold mb-3">Score Distribution (Top 50)</h3>
+        <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50 sticky top-0">
+              <tr>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {stats.score_distribution && stats.score_distribution.length > 0 ? (
+                stats.score_distribution.map((job: any, idx: number) => (
+                  <tr key={idx} className={job.score < stats.min_score ? 'bg-red-50' : ''}>
+                    <td className="px-4 py-2 text-sm">
+                      <span className={`font-semibold ${job.score < stats.min_score ? 'text-red-700' : 'text-gray-900'}`}>
+                        {job.score.toFixed(2)}
+                      </span>
+                      {job.score < stats.min_score && (
+                        <span className="text-xs text-red-600 ml-2">(filtered)</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-sm text-gray-900">{job.title}</td>
+                    <td className="px-4 py-2 text-sm text-gray-500 capitalize">{job.source}</td>
+                    <td className="px-4 py-2 text-sm text-gray-500 capitalize">{job.status.replace('_', ' ')}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4} className="px-4 py-4 text-center text-gray-500">No jobs found</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <h4 className="font-semibold text-yellow-800 mb-2">💡 Debugging Tips</h4>
+        <ul className="text-sm text-yellow-700 space-y-1 list-disc list-inside">
+          <li>If "Jobs Found" is low, check scraping logs for errors</li>
+          <li>Jobs with red background are filtered out due to low scores</li>
+          <li>Lower "Minimum Relevance Score" in Search Config to see more jobs</li>
+          <li>Check "Jobs by Source" to see which sources are working</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
