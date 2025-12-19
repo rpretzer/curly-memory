@@ -132,7 +132,11 @@ class SearchAgent:
                     if keywords:
                         query = f"{title} {' '.join(keywords[:3])}"  # Add top 3 keywords
                     
-                    logger.info(f"Searching {source_name} for: {query}")
+                    logger.info(f"=== SEARCHING {source_name.upper()} ===")
+                    logger.info(f"Query: '{query}'")
+                    logger.info(f"Location: {location_str}")
+                    logger.info(f"Remote: {remote}")
+                    logger.info(f"Max results per source: {max_results_per_source}")
                     
                     jobs = source.search(
                         query=query,
@@ -141,10 +145,15 @@ class SearchAgent:
                         max_results=max_results_per_source,
                     )
                     
+                    logger.info(f"=== {source_name.upper()} SEARCH RESULT ===")
+                    logger.info(f"Jobs returned: {len(jobs)}")
+                    if jobs:
+                        logger.info(f"Sample jobs: {[f'{j.title} @ {j.company}' for j in jobs[:3]]}")
+                    
                     all_jobs.extend(jobs)
                     sources_searched.append(source_name)
                     
-                    logger.info(f"Found {len(jobs)} jobs from {source_name} for '{title}'")
+                    logger.info(f"✓ {source_name}: Found {len(jobs)} jobs for '{title}'")
             
             except Exception as e:
                 logger.error(f"Error searching {source_name}: {e}", exc_info=True)
@@ -164,7 +173,13 @@ class SearchAgent:
                 seen_urls.add(job.source_url)
                 unique_jobs.append(job)
         
-        logger.info(f"Total unique jobs found: {len(unique_jobs)} (from {len(all_jobs)} total)")
+        logger.info(f"=== SEARCH AGENT SUMMARY ===")
+        logger.info(f"Total jobs from all sources: {len(all_jobs)}")
+        logger.info(f"Unique jobs (after deduplication): {len(unique_jobs)}")
+        logger.info(f"Duplicates removed: {len(all_jobs) - len(unique_jobs)}")
+        logger.info(f"Sources searched: {sources_searched}")
+        if unique_jobs:
+            logger.info(f"Sample unique jobs: {[f'{j.title} @ {j.company} ({j.source})' for j in unique_jobs[:5]]}")
         
         if self.log_agent and run_id:
             self.log_agent.log_search_complete(

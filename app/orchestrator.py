@@ -136,6 +136,15 @@ class PipelineOrchestrator:
         self.db.commit()
         
         try:
+            logger.info(f"=== ORCHESTRATOR: STARTING SEARCH PHASE ===")
+            logger.info(f"Run ID: {run_id}")
+            logger.info(f"Titles: {titles}")
+            logger.info(f"Locations: {locations}")
+            logger.info(f"Remote: {remote}")
+            logger.info(f"Keywords: {keywords}")
+            logger.info(f"Sources: {sources}")
+            logger.info(f"Max results per source: {max_results}")
+            
             # Search for jobs
             job_listings = self.search_agent.search(
                 titles=titles,
@@ -147,17 +156,26 @@ class PipelineOrchestrator:
                 run_id=run_id,
             )
             
+            logger.info(f"=== ORCHESTRATOR: SAVING JOBS TO DATABASE ===")
+            logger.info(f"Job listings to save: {len(job_listings)}")
+            
             # Save jobs to database
             job_ids = []
+            saved_count = 0
+            existing_count = 0
             from app.models import Job, JobSource, ApplicationType
             
-            for listing in job_listings:
+            for idx, listing in enumerate(job_listings, 1):
+                logger.debug(f"Processing listing {idx}/{len(job_listings)}: {listing.title} @ {listing.company}")
+                
                 # Check if job already exists
                 existing = self.db.query(Job).filter(
                     Job.source_url == listing.source_url
                 ).first()
                 
                 if existing:
+                    existing_count += 1
+                    logger.debug(f"  → Job already exists (ID: {existing.id}), updating run_id")
                     if existing.run_id != run_id:
                         existing.run_id = run_id
                         self.db.commit()
@@ -201,11 +219,20 @@ class PipelineOrchestrator:
                 self.db.commit()
                 self.db.refresh(job)
                 job_ids.append(job.id)
+                saved_count += 1
+                logger.debug(f"  → Saved new job (ID: {job.id})")
+            
+            logger.info(f"=== ORCHESTRATOR: SEARCH PHASE COMPLETE ===")
+            logger.info(f"New jobs saved: {saved_count}")
+            logger.info(f"Existing jobs reused: {existing_count}")
+            logger.info(f"Total job IDs: {len(job_ids)}")
             
             run.jobs_found = len(job_ids)
             run.status = RunStatus.COMPLETED
             run.completed_at = datetime.utcnow()
             self.db.commit()
+            
+            logger.info(f"Run {run_id} updated: jobs_found={run.jobs_found}, status={run.status}")
             
             return job_ids
         

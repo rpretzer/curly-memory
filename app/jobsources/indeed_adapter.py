@@ -76,7 +76,8 @@ class IndeedAdapter(BaseJobSource):
         Returns:
             List of JobListing objects
         """
-        logger.info(f"Searching Indeed for: {query} (location: {location}, remote: {remote})")
+        logger.info(f"=== STARTING INDEED SEARCH ===")
+        logger.info(f"Query: '{query}', Location: {location}, Remote: {remote}, Max Results: {max_results}")
         
         # Try third-party APIs first if configured
         if self.scrapeops_api:
@@ -127,15 +128,26 @@ class IndeedAdapter(BaseJobSource):
                     if self.proxy_rotator:
                         proxies = self.proxy_rotator.get_proxy()
                     
+                    search_url = f"{self.base_url}/jobs"
+                    logger.info(f"=== FETCHING INDEED PAGE {page_count + 1} ===")
+                    logger.info(f"URL: {search_url}")
+                    logger.info(f"Params: {params}")
+                    logger.info(f"Start offset: {start}, Results per page: {results_per_page}")
+                    
                     response = self._make_request_with_retry(
-                        f"{self.base_url}/jobs",
+                        search_url,
                         params=params,
                         proxies=proxies
                     )
                     
+                    logger.info(f"Response status: {response.status_code}")
+                    logger.info(f"Response size: {len(response.text)} characters")
+                    logger.info(f"Final URL: {response.url}")
+                    
                     # Check status before processing
                     if response.status_code == 403:
-                        logger.warning("Got 403 from Indeed - rate limited or blocked")
+                        logger.error("=== 403 FORBIDDEN - Rate limited or blocked ===")
+                        logger.error(f"Response preview: {response.text[:500]}")
                         break
                     
                     response.raise_for_status()
@@ -146,7 +158,9 @@ class IndeedAdapter(BaseJobSource):
                         logger.warning("CAPTCHA detected on Indeed")
                         break
                     
+                    logger.info("Parsing HTML with BeautifulSoup...")
                     soup = BeautifulSoup(response.content, 'html.parser')
+                    logger.info(f"HTML parsed. Looking for job cards...")
                     
                     # Try multiple selectors for Indeed's job cards (try each until we find results)
                     job_cards = []
@@ -160,11 +174,13 @@ class IndeedAdapter(BaseJobSource):
                         ('div', {'id': lambda x: x and 'job_' in x}),
                     ]
                     
-                    for tag, attrs in selectors:
+                    logger.info(f"Trying {len(selectors)} different selectors...")
+                    for idx, (tag, attrs) in enumerate(selectors, 1):
                         found = soup.find_all(tag, attrs)
+                        logger.info(f"Selector {idx}/{len(selectors)}: {tag} with {attrs} -> Found {len(found)} elements")
                         if found:
                             job_cards = found
-                            logger.info(f"Found {len(job_cards)} job cards using selector: {tag} with {attrs}")
+                            logger.info(f"✓ SUCCESS: Found {len(job_cards)} job cards using selector: {tag} with {attrs}")
                             break
                     
                     if not job_cards:
@@ -183,21 +199,34 @@ class IndeedAdapter(BaseJobSource):
                                 logger.error(f"Indeed page structure may have changed. Response status: {response.status_code}, URL: {response.url}")
                             break
                     
-                    logger.info(f"Processing {len(job_cards)} job cards from page (already have {len(jobs)} jobs)")
+                    cards_to_process = min(results_per_page, max_results - len(jobs))
+                    logger.info(f"=== PARSING JOB CARDS ===")
+                    logger.info(f"Total cards found: {len(job_cards)}")
+                    logger.info(f"Cards to process: {cards_to_process}")
+                    logger.info(f"Already have {len(jobs)} jobs, need {max_results - len(jobs)} more")
+                    
                     parsed_count = 0
-                    for card in job_cards[:min(results_per_page, max_results - len(jobs))]:
+                    failed_count = 0
+                    for idx, card in enumerate(job_cards[:cards_to_process], 1):
                         try:
+                            logger.debug(f"Parsing card {idx}/{cards_to_process}...")
                             job = self._parse_job_card(card)
                             if job:
                                 jobs.append(job)
                                 parsed_count += 1
+                                logger.debug(f"✓ Card {idx}: Successfully parsed '{job.title}' at {job.company}")
                             else:
-                                logger.debug(f"Job card parsed but returned None")
+                                failed_count += 1
+                                logger.warning(f"✗ Card {idx}: Parsed but returned None")
                         except Exception as e:
-                            logger.warning(f"Error parsing job card: {e}", exc_info=True)
+                            failed_count += 1
+                            logger.warning(f"✗ Card {idx}: Error parsing job card: {e}", exc_info=True)
                             continue
                     
-                    logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards")
+                    logger.info(f"=== PARSING SUMMARY ===")
+                    logger.info(f"Successfully parsed: {parsed_count}/{cards_to_process}")
+                    logger.info(f"Failed/None: {failed_count}/{cards_to_process}")
+                    logger.info(f"Total jobs collected so far: {len(jobs)}/{max_results}")
                     
                     # Check if there are more pages
                     if len(job_cards) < results_per_page:
@@ -211,7 +240,11 @@ class IndeedAdapter(BaseJobSource):
                     logger.error(f"Error fetching Indeed page: {e}")
                     break
             
-            logger.info(f"Found {len(jobs)} jobs from Indeed")
+            logger.info(f"=== INDEED SEARCH COMPLETE ===")
+            logger.info(f"Total jobs found: {len(jobs)}")
+            logger.info(f"Requested max: {max_results}")
+            logger.info(f"Pages fetched: {page_count}")
+            logger.info(f"Returning {min(len(jobs), max_results)} jobs")
             return jobs[:max_results]
             
         except Exception as e:
