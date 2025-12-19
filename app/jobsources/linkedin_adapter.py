@@ -36,6 +36,11 @@ class LinkedInAdapter(BaseJobSource):
         self.use_playwright = config.get("use_playwright", False) if config else False  # Disabled by default
         self._playwright = None
         self._browser = None
+        self._logged_in = False
+        
+        # LinkedIn credentials for authenticated access
+        self.linkedin_email = config.get("linkedin_email", "")
+        self.linkedin_password = config.get("linkedin_password", "")
         
         # Session for direct scraping
         self.session = requests.Session()

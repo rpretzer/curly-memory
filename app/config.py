@@ -96,6 +96,10 @@ class Config:
         self.indeed_api_key = os.getenv("INDEED_API_KEY", "")
         self.wellfound_api_key = os.getenv("WELLFOUND_API_KEY", "")
         
+        # LinkedIn credentials for authenticated scraping
+        self.linkedin_email = os.getenv("LINKEDIN_EMAIL", "")
+        self.linkedin_password = os.getenv("LINKEDIN_PASSWORD", "")
+        
         # Third-party scraping API keys
         self.scrapeops_api_key = os.getenv("SCRAPEOPS_API_KEY", "")
         self.hasdata_api_key = os.getenv("HASDATA_API_KEY", "")
