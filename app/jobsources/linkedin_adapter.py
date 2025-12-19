@@ -443,29 +443,81 @@ class LinkedInAdapter(BaseJobSource):
             
             jobs = []
             scroll_attempts = 0
-            # Increase max scrolls to fetch more results (scroll more aggressively)
-            max_scrolls = max(5, max_results // 5)  # Allow more scrolling
+            seen_urls = set()  # Track URLs to avoid duplicates
+            # Increase max scrolls to fetch more results
+            max_scrolls = max(10, max_results // 3)  # More aggressive scrolling for better results
+            
+            logger.info(f"Starting job collection (target: {max_results} jobs, max scrolls: {max_scrolls})")
             
             while len(jobs) < max_results and scroll_attempts < max_scrolls:
-                # Find job cards
-                job_cards = page.query_selector_all('div[data-job-id]')
+                logger.debug(f"Scroll attempt {scroll_attempts + 1}/{max_scrolls}, currently have {len(jobs)} jobs")
                 
+                # Find job cards with multiple selector attempts
+                job_cards = []
+                selectors = [
+                    'div[data-job-id]',
+                    'div.job-card-container',
+                    'li.jobs-search-results__list-item',
+                    'div[data-entity-urn*="jobPosting"]',
+                ]
+                
+                for selector in selectors:
+                    found = page.query_selector_all(selector)
+                    if found:
+                        job_cards = found
+                        logger.debug(f"Found {len(job_cards)} job cards using selector: {selector}")
+                        break
+                
+                if not job_cards:
+                    logger.warning(f"No job cards found on scroll attempt {scroll_attempts + 1}")
+                    # Try scrolling anyway to load more content
+                    page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    time.sleep(3)
+                    scroll_attempts += 1
+                    continue
+                
+                # Parse each job card
+                parsed_this_round = 0
                 for card in job_cards:
                     if len(jobs) >= max_results:
                         break
                     
                     try:
                         job = self._parse_linkedin_card(card, page)
-                        if job and job not in jobs:  # Avoid duplicates
-                            jobs.append(job)
+                        if job:
+                            # Check for duplicates by URL
+                            if job.source_url not in seen_urls:
+                                seen_urls.add(job.source_url)
+                                jobs.append(job)
+                                parsed_this_round += 1
+                            else:
+                                logger.debug(f"Skipping duplicate job: {job.title}")
                     except Exception as e:
-                        logger.warning(f"Error parsing LinkedIn job card: {e}")
+                        logger.debug(f"Error parsing LinkedIn job card: {e}")
                         continue
                 
-                # Scroll to load more
+                logger.info(f"Parsed {parsed_this_round} new jobs this round (total: {len(jobs)}/{max_results})")
+                
+                # Scroll to load more jobs
                 if len(jobs) < max_results:
-                    page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                    time.sleep(2)
+                    # Scroll smoothly to trigger lazy loading
+                    page.evaluate('''
+                        window.scrollTo({
+                            top: document.body.scrollHeight,
+                            behavior: 'smooth'
+                        });
+                    ''')
+                    time.sleep(3)  # Wait for content to load
+                    
+                    # Also try clicking "Show more" button if it exists
+                    try:
+                        show_more = page.query_selector('button.infinite-scroller__show-more-button, button[aria-label*="Show more"]')
+                        if show_more:
+                            show_more.click()
+                            time.sleep(2)
+                    except:
+                        pass
+                    
                     scroll_attempts += 1
                 else:
                     break
@@ -499,9 +551,23 @@ class LinkedInAdapter(BaseJobSource):
                 company_elem = card.query_selector('h4 a')
             company = company_elem.inner_text().strip() if company_elem else "Unknown Company"
             
-            # Location
-            location_elem = card.query_selector('li.job-card-container__metadata-item')
-            location = location_elem.inner_text().strip() if location_elem else None
+            # Location - try multiple selectors
+            location = None
+            location_selectors = [
+                'li.job-card-container__metadata-item',
+                '.job-card-container__metadata-item--bullet',
+                'span.job-card-container__metadata-item',
+                '.job-card-container__metadata-wrapper li',
+            ]
+            for selector in location_selectors:
+                try:
+                    location_elem = card.query_selector(selector)
+                    if location_elem:
+                        location = location_elem.inner_text().strip()
+                        if location:
+                            break
+                except:
+                    continue
             
             # Description snippet
             snippet_elem = card.query_selector('p.job-card-container__description')
