@@ -69,6 +69,17 @@ class SearchAgent:
                 config=wellfound_config,
                 api_key=config.wellfound_api_key
             )
+        
+        # Monster / Ohio Means Jobs
+        if job_sources_config.get("monster", {}).get("enabled", False):
+            monster_config = job_sources_config.get("monster", {})
+            # Add third-party API keys to config if available
+            if config.scrapeops_api_key:
+                monster_config["scrapeops_api_key"] = config.scrapeops_api_key
+            self.sources["monster"] = MonsterAdapter(
+                config=monster_config,
+                api_key=config.monster_api_key
+            )
     
     def search(
         self,
