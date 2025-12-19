@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 
 from langchain_openai import ChatOpenAI
+from langchain_community.chat_models import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.models import Job
@@ -43,22 +44,37 @@ class ContentGenerationAgent:
         default_llm = config.get_llm_defaults()
         llm_config = llm_config or {}
         
+        self.llm_provider = llm_config.get("provider", default_llm.get("provider", "openai"))
         self.llm_model = llm_config.get("model", default_llm["model"])
         self.temperature = llm_config.get("temperature", default_llm["temperature"])
         self.top_p = llm_config.get("top_p", default_llm["top_p"])
         self.max_tokens = llm_config.get("max_tokens", default_llm["max_tokens"])
+        self.ollama_base_url = llm_config.get("ollama_base_url", default_llm.get("ollama_base_url", "http://localhost:11434"))
         
-        # Initialize LLM
+        # Initialize LLM based on provider
         try:
-            self.llm = ChatOpenAI(
-                model=self.llm_model,
-                temperature=self.temperature,
-                top_p=self.top_p,
-                max_tokens=self.max_tokens,
-                api_key=config.llm.api_key,
-            )
+            if self.llm_provider.lower() == "ollama":
+                logger.info(f"Initializing Ollama LLM with model: {self.llm_model} at {self.ollama_base_url}")
+                self.llm = ChatOllama(
+                    model=self.llm_model,
+                    temperature=self.temperature,
+                    base_url=self.ollama_base_url,
+                    num_predict=self.max_tokens,  # Ollama uses num_predict instead of max_tokens
+                )
+            else:
+                # Default to OpenAI
+                logger.info(f"Initializing OpenAI LLM with model: {self.llm_model}")
+                if not config.llm.api_key and self.llm_provider.lower() == "openai":
+                    logger.warning("OpenAI API key not found, but OpenAI provider selected")
+                self.llm = ChatOpenAI(
+                    model=self.llm_model,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                    max_tokens=self.max_tokens,
+                    api_key=config.llm.api_key if config.llm.api_key else None,
+                )
         except Exception as e:
-            logger.error(f"Failed to initialize LLM: {e}")
+            logger.error(f"Failed to initialize LLM ({self.llm_provider}): {e}")
             self.llm = None
         
         # Get content prompts

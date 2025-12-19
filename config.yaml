@@ -32,12 +32,14 @@ thresholds:
   high_relevance_score: 8
   auto_approval_threshold: 8
 llm:
-  model: gpt-4o-mini  # Updated from gpt-4-turbo-preview (deprecated)
+  provider: openai  # Options: "openai" or "ollama"
+  model: gpt-4o-mini  # For OpenAI: gpt-4o-mini, gpt-4o, gpt-3.5-turbo. For Ollama: llama3, mistral, codellama, etc.
   temperature: 0.7
   top_p: 1.0
   max_tokens: 2000
   resume_generation_temperature: 0.5
   cover_letter_temperature: 0.7
+  ollama_base_url: http://localhost:11434  # Ollama API endpoint (if using Ollama provider)
 job_sources:
   linkedin:
     enabled: true
