@@ -39,6 +39,11 @@ class SearchAgent:
                 linkedin_config["apify_api_key"] = config.apify_api_key
             if config.mantiks_api_key:
                 linkedin_config["mantiks_api_key"] = config.mantiks_api_key
+            # Add LinkedIn credentials if available
+            if config.linkedin_email:
+                linkedin_config["linkedin_email"] = config.linkedin_email
+            if config.linkedin_password:
+                linkedin_config["linkedin_password"] = config.linkedin_password
             self.sources["linkedin"] = LinkedInAdapter(
                 config=linkedin_config,
                 api_key=config.linkedin_api_key

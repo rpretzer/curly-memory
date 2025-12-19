@@ -52,8 +52,8 @@ job_sources:
     enabled: true
     max_results: 50
     rate_limit_delay: 3.0
-    use_playwright: true  # Enable Playwright for JavaScript rendering
-    use_scrapeops: false  # Disable ScrapeOps (using Playwright instead)
+    use_playwright: false  # Disable Playwright (using ScrapeOps API instead)
+    use_scrapeops: true  # Enable ScrapeOps API (more reliable than scraping)
     use_hasdata: false
     max_retries: 3
     retry_delay: 2.0

@@ -121,6 +121,53 @@ class LinkedInAdapter(BaseJobSource):
         if direct_scraping_failed:
             raise Exception(f"Failed to scrape LinkedIn jobs: {direct_error}. Enable Playwright in config (use_playwright: true) or use a third-party API (Apify, Mantiks).")
     
+    def _login_linkedin(self, page) -> bool:
+        """Login to LinkedIn if credentials are provided."""
+        if not self.linkedin_email or not self.linkedin_password:
+            logger.info("No LinkedIn credentials provided, skipping login")
+            return False
+        
+        if self._logged_in:
+            logger.info("Already logged into LinkedIn")
+            return True
+        
+        try:
+            logger.info("Logging into LinkedIn...")
+            page.goto(f"{self.base_url}/login", wait_until='networkidle', timeout=30000)
+            time.sleep(2)
+            
+            # Enter email
+            email_input = page.query_selector('input[name="session_key"]')
+            if email_input:
+                email_input.fill(self.linkedin_email)
+                time.sleep(1)
+            
+            # Enter password
+            password_input = page.query_selector('input[name="session_password"]')
+            if password_input:
+                password_input.fill(self.linkedin_password)
+                time.sleep(1)
+            
+            # Click sign in button
+            sign_in_button = page.query_selector('button[type="submit"]')
+            if sign_in_button:
+                sign_in_button.click()
+                time.sleep(5)  # Wait for login to complete
+            
+            # Check if login was successful (look for feed or jobs page)
+            current_url = page.url
+            if 'feed' in current_url or 'jobs' in current_url or 'login' not in current_url:
+                self._logged_in = True
+                logger.info("✓ Successfully logged into LinkedIn")
+                return True
+            else:
+                logger.warning("Login may have failed - still on login page")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error logging into LinkedIn: {e}", exc_info=True)
+            return False
+    
     def _scrape_with_playwright(
         self,
         query: str,
@@ -134,12 +181,17 @@ class LinkedInAdapter(BaseJobSource):
             
             if not self._playwright:
                 self._playwright = sync_playwright().start()
-                self._browser = self._playwright.chromium.launch(headless=True)
+                # Use headless=False to avoid detection and allow login
+                self._browser = self._playwright.chromium.launch(headless=False)
             
             page = self._browser.new_page()
             page.set_extra_http_headers({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             })
+            
+            # Login if credentials are provided
+            if self.linkedin_email and self.linkedin_password:
+                self._login_linkedin(page)
             
             # Build search URL
             search_url = f"{self.base_url}/jobs/search"
@@ -159,7 +211,7 @@ class LinkedInAdapter(BaseJobSource):
             
             logger.info(f"Navigating to LinkedIn: {url}")
             page.goto(url, wait_until='networkidle', timeout=30000)
-            time.sleep(2)  # Wait for dynamic content
+            time.sleep(3)  # Wait for dynamic content (longer if logged in)
             
             jobs = []
             scroll_attempts = 0
