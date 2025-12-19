@@ -215,6 +215,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [validatingLinkedIn, setValidatingLinkedIn] = useState(false);
+  const [linkedInValidationStatus, setLinkedInValidationStatus] = useState<{ valid: boolean; message?: string } | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -258,16 +260,73 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!config) return;
 
+    // Validate LinkedIn credentials if they are provided
+    const linkedinEmail = config.job_sources?.linkedin?.linkedin_email;
+    const linkedinPassword = config.job_sources?.linkedin?.linkedin_password;
+    
+    if (linkedinEmail && linkedinPassword) {
+      // Check if credentials have changed (basic check - could be improved)
+      const needsValidation = !linkedInValidationStatus || 
+        linkedInValidationStatus.valid === false ||
+        linkedinEmail !== (config.job_sources?.linkedin?.linkedin_email || '');
+      
+      if (needsValidation) {
+        setMessage({ type: 'error', text: 'Please validate LinkedIn credentials before saving' });
+        return;
+      }
+    }
+
     setSaving(true);
     setMessage(null);
     try {
       await axios.put('/api/config', config);
       setMessage({ type: 'success', text: 'Configuration updated successfully!' });
+      // Clear validation status after successful save
+      setLinkedInValidationStatus(null);
     } catch (error) {
       console.error('Error updating config:', error);
       setMessage({ type: 'error', text: 'Failed to update configuration' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleValidateLinkedInCredentials = async () => {
+    if (!config) return;
+    
+    const linkedinEmail = config.job_sources?.linkedin?.linkedin_email;
+    const linkedinPassword = config.job_sources?.linkedin?.linkedin_password;
+    
+    if (!linkedinEmail || !linkedinPassword) {
+      setLinkedInValidationStatus({ valid: false, message: 'Please enter both email and password' });
+      return;
+    }
+
+    setValidatingLinkedIn(true);
+    setLinkedInValidationStatus(null);
+    setMessage(null);
+
+    try {
+      const response = await axios.post('/api/linkedin/validate-credentials', null, {
+        params: {
+          email: linkedinEmail,
+          password: linkedinPassword,
+        },
+      });
+
+      if (response.data.valid) {
+        setLinkedInValidationStatus({ valid: true, message: response.data.message || 'Credentials validated successfully' });
+        setMessage({ type: 'success', text: 'LinkedIn credentials validated successfully!' });
+      } else {
+        setLinkedInValidationStatus({ valid: false, message: response.data.error || 'Validation failed' });
+        setMessage({ type: 'error', text: `LinkedIn validation failed: ${response.data.error || 'Invalid credentials'}` });
+      }
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.detail || error.message || 'Validation error';
+      setLinkedInValidationStatus({ valid: false, message: errorMessage });
+      setMessage({ type: 'error', text: `Failed to validate credentials: ${errorMessage}` });
+    } finally {
+      setValidatingLinkedIn(false);
     }
   };
 
@@ -709,6 +768,8 @@ export default function SettingsPage() {
                               },
                             },
                           });
+                          // Reset validation status when email changes
+                          setLinkedInValidationStatus(null);
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
                         placeholder="your.email@example.com"
@@ -733,14 +794,55 @@ export default function SettingsPage() {
                               },
                             },
                           });
+                          // Reset validation status when password changes
+                          setLinkedInValidationStatus(null);
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
                         placeholder="••••••••"
                       />
                     </div>
                   </div>
+                  
+                  {/* Validation Status and Button */}
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={handleValidateLinkedInCredentials}
+                      disabled={validatingLinkedIn || !config.job_sources?.linkedin?.linkedin_email || !config.job_sources?.linkedin?.linkedin_password}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {validatingLinkedIn ? 'Validating...' : 'Validate Credentials'}
+                    </button>
+                    
+                    {linkedInValidationStatus && (
+                      <div className={`mt-2 p-3 rounded-md ${
+                        linkedInValidationStatus.valid 
+                          ? 'bg-green-50 border border-green-200 text-green-800' 
+                          : 'bg-red-50 border border-red-200 text-red-800'
+                      }`}>
+                        <div className="flex items-center">
+                          {linkedInValidationStatus.valid ? (
+                            <>
+                              <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                              <span className="font-medium">✓ {linkedInValidationStatus.message || 'Credentials validated successfully'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                              </svg>
+                              <span className="font-medium">✗ {linkedInValidationStatus.message || 'Validation failed'}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
                   <p className="text-xs text-blue-600 mt-2">
-                    ⚠️ These credentials will be saved to config.yaml. Keep your config file secure.
+                    ⚠️ These credentials will be saved to config.yaml. Keep your config file secure. You must validate credentials before saving.
                   </p>
                 </div>
                 <div className="space-y-4">

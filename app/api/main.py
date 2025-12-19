@@ -689,6 +689,114 @@ async def update_scheduler_config(
 
 
 # Debug endpoints
+@app.post("/linkedin/validate-credentials")
+async def validate_linkedin_credentials(
+    email: str,
+    password: str,
+    db: Session = Depends(get_db)
+):
+    """Validate LinkedIn credentials by attempting to log in."""
+    try:
+        from app.agents.search_agent import SearchAgent
+        from app.agents.log_agent import LogAgent
+        from playwright.sync_api import sync_playwright
+        
+        log_agent = LogAgent(db)
+        search_agent = SearchAgent(db, log_agent=log_agent)
+        
+        if 'linkedin' not in search_agent.sources:
+            raise HTTPException(status_code=400, detail="LinkedIn source not enabled")
+        
+        # Test login with provided credentials
+        logger.info(f"Validating LinkedIn credentials for: {email}")
+        
+        try:
+            playwright = sync_playwright().start()
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            # Navigate to login page
+            page.goto("https://www.linkedin.com/login", wait_until='networkidle', timeout=30000)
+            import time
+            time.sleep(2)
+            
+            # Enter email
+            email_input = page.query_selector('input[name="session_key"]')
+            if not email_input:
+                browser.close()
+                playwright.stop()
+                return {
+                    "valid": False,
+                    "error": "Could not find email input field on LinkedIn login page"
+                }
+            email_input.fill(email)
+            time.sleep(1)
+            
+            # Enter password
+            password_input = page.query_selector('input[name="session_password"]')
+            if not password_input:
+                browser.close()
+                playwright.stop()
+                return {
+                    "valid": False,
+                    "error": "Could not find password input field on LinkedIn login page"
+                }
+            password_input.fill(password)
+            time.sleep(1)
+            
+            # Click sign in button
+            sign_in_button = page.query_selector('button[type="submit"]')
+            if sign_in_button:
+                sign_in_button.click()
+                time.sleep(5)  # Wait for login to complete
+            
+            # Check if login was successful
+            current_url = page.url
+            login_successful = 'feed' in current_url or 'jobs' in current_url or 'login' not in current_url
+            
+            # Check for error messages
+            error_message = None
+            if not login_successful:
+                error_elem = page.query_selector('.form__label--error, .alert-error, [role="alert"]')
+                if error_elem:
+                    error_message = error_elem.inner_text().strip()
+                
+                # Also check for CAPTCHA
+                captcha = page.query_selector('iframe[title*="captcha"], iframe[src*="captcha"]')
+                if captcha:
+                    error_message = "LinkedIn is requesting CAPTCHA verification. Please try again later."
+            
+            browser.close()
+            playwright.stop()
+            
+            if login_successful:
+                logger.info(f"LinkedIn credentials validated successfully for: {email}")
+                return {
+                    "valid": True,
+                    "message": "Credentials validated successfully"
+                }
+            else:
+                error_msg = error_message or "Login failed - invalid credentials or account issue"
+                logger.warning(f"LinkedIn credentials validation failed for {email}: {error_msg}")
+                return {
+                    "valid": False,
+                    "error": error_msg
+                }
+                
+        except ImportError:
+            raise HTTPException(status_code=500, detail="Playwright not installed. Install with: pip install playwright && playwright install")
+        except Exception as e:
+            logger.error(f"Error validating LinkedIn credentials: {e}", exc_info=True)
+            return {
+                "valid": False,
+                "error": f"Validation error: {str(e)}"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error validating LinkedIn credentials: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/linkedin/hiring-connections")
 async def get_hiring_connections(
     max_connections: int = 100,
