@@ -193,9 +193,46 @@ class IndeedAdapter(BaseJobSource):
                             # We'll need special parsing for these
                         else:
                             logger.warning(f"No job cards found on Indeed page (start={start}). Page length: {len(response.text)} chars")
-                            # Log a sample of the HTML for debugging
-                            if start == 0:  # Only log for first page
-                                # Save response for debugging
+                            # Save HTML sample for debugging
+                            if start == 0:  # Only save for first page
+                                try:
+                                    # Save a sample of the HTML
+                                    html_sample_path = "indeed_html_sample.html"
+                                    with open(html_sample_path, 'w', encoding='utf-8') as f:
+                                        f.write(response.text[:50000])  # First 50k chars
+                                    logger.error(f"Saved HTML sample to {html_sample_path} for inspection")
+                                    
+                                    # Try to find ANY divs with job-related classes/ids
+                                    all_divs = soup.find_all('div')
+                                    logger.info(f"Total divs on page: {len(all_divs)}")
+                                    
+                                    # Look for divs with job-related attributes
+                                    job_related_divs = []
+                                    for div in all_divs[:100]:  # Check first 100 divs
+                                        attrs = div.attrs
+                                        if any(key in str(attrs).lower() for key in ['job', 'result', 'card', 'listing', 'position']):
+                                            job_related_divs.append((div.name, attrs, div.get_text()[:50]))
+                                    
+                                    if job_related_divs:
+                                        logger.info(f"Found {len(job_related_divs)} potentially job-related divs:")
+                                        for name, attrs, text in job_related_divs[:10]:
+                                            logger.info(f"  {name} with {attrs}: {text}...")
+                                    
+                                    # Look for any links with job IDs
+                                    all_links = soup.find_all('a', href=True)
+                                    viewjob_links = [a for a in all_links if '/viewjob' in a.get('href', '') or 'jk=' in a.get('href', '')]
+                                    logger.info(f"Found {len(viewjob_links)} links with /viewjob or jk= in href")
+                                    if viewjob_links:
+                                        logger.info(f"Sample link: {viewjob_links[0].get('href')}")
+                                        # Try to find parent elements
+                                        for link in viewjob_links[:5]:
+                                            parent = link.parent
+                                            if parent:
+                                                logger.info(f"Link parent: {parent.name} with classes: {parent.get('class', [])}")
+                                    
+                                except Exception as e:
+                                    logger.error(f"Error saving HTML sample: {e}")
+                                
                                 logger.error(f"Indeed page structure may have changed. Response status: {response.status_code}, URL: {response.url}")
                             break
                     

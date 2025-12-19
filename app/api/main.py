@@ -19,7 +19,14 @@ from app.orchestrator import PipelineOrchestrator
 from app.config import config
 from app.user_profile import get_user_profile, create_default_profile
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('scraping_debug.log')
+    ]
+)
 logger = logging.getLogger(__name__)
 
 
