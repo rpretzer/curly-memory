@@ -673,6 +673,68 @@ export default function SettingsPage() {
             <form onSubmit={handleConfigUpdate} className="bg-white shadow rounded-lg p-6 space-y-6">
               <div>
                 <h3 className="text-xl font-semibold mb-4">Default Search Parameters</h3>
+                
+                {/* LinkedIn Credentials */}
+                <div className="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="text-lg font-semibold mb-3 text-blue-900">LinkedIn Credentials</h4>
+                  <p className="text-sm text-blue-700 mb-4">
+                    Provide your LinkedIn credentials for better search results and access to more job listings.
+                    Credentials are stored in config.yaml and used for authenticated scraping.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="linkedin_email" className="block text-sm font-medium text-gray-700 mb-1">
+                        LinkedIn Email
+                      </label>
+                      <input
+                        type="email"
+                        id="linkedin_email"
+                        value={config.job_sources?.linkedin?.linkedin_email || ''}
+                        onChange={(e) => {
+                          setConfig({
+                            ...config,
+                            job_sources: {
+                              ...config.job_sources,
+                              linkedin: {
+                                ...config.job_sources?.linkedin,
+                                linkedin_email: e.target.value,
+                              },
+                            },
+                          });
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                        placeholder="your.email@example.com"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="linkedin_password" className="block text-sm font-medium text-gray-700 mb-1">
+                        LinkedIn Password
+                      </label>
+                      <input
+                        type="password"
+                        id="linkedin_password"
+                        value={config.job_sources?.linkedin?.linkedin_password || ''}
+                        onChange={(e) => {
+                          setConfig({
+                            ...config,
+                            job_sources: {
+                              ...config.job_sources,
+                              linkedin: {
+                                ...config.job_sources?.linkedin,
+                                linkedin_password: e.target.value,
+                              },
+                            },
+                          });
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                        placeholder="••••••••"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-blue-600 mt-2">
+                    ⚠️ These credentials will be saved to config.yaml. Keep your config file secure.
+                  </p>
+                </div>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Default Job Titles</label>

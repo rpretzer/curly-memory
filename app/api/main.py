@@ -151,6 +151,7 @@ class ConfigUpdate(BaseModel):
     scoring: Optional[Dict[str, Any]] = None
     thresholds: Optional[Dict[str, Any]] = None
     content_prompts: Optional[Dict[str, str]] = None
+    job_sources: Optional[Dict[str, Any]] = None
 
 
 # Health check
@@ -882,6 +883,7 @@ async def get_config():
         "scoring": yaml_config.get("scoring", {}),
         "thresholds": yaml_config.get("thresholds", {}),
         "content_prompts": yaml_config.get("content_prompts", {}),
+        "job_sources": yaml_config.get("job_sources", {}),
     }
 
 
@@ -906,6 +908,8 @@ async def update_config(config_update: ConfigUpdate):
         yaml_config["thresholds"] = {**yaml_config.get("thresholds", {}), **config_update.thresholds}
     if config_update.content_prompts:
         yaml_config["content_prompts"] = {**yaml_config.get("content_prompts", {}), **config_update.content_prompts}
+    if config_update.job_sources:
+        yaml_config["job_sources"] = {**yaml_config.get("job_sources", {}), **config_update.job_sources}
     
     # Save config
     with open(config_path, "w") as f:
