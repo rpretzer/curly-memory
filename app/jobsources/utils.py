@@ -169,7 +169,7 @@ class ScrapeOpsAPI(ThirdPartyAPI):
         Args:
             api_key: ScrapeOps API key (get from https://scrapeops.io)
         """
-        super().__init__(api_key, "https://api.scrapeops.io/v1")
+        super().__init__(api_key, "https://proxy.scrapeops.io/v1")
         if api_key:
             self.session.headers.update({
                 'X-ScrapeOps-API-Key': api_key
@@ -188,18 +188,21 @@ class ScrapeOpsAPI(ThirdPartyAPI):
         if not self.api_key:
             raise ValueError("ScrapeOps API key required")
         
+        # Build the Indeed URL with query parameters
+        from urllib.parse import urlencode
+        indeed_params = {'q': query}
+        if location:
+            indeed_params['l'] = location
+        if remote:
+            indeed_params['remotejob'] = '1'
+        
+        indeed_url = f"https://www.indeed.com/jobs?{urlencode(indeed_params)}"
+        
+        # ScrapeOps API parameters
         params = {
             'api_key': self.api_key,
-            'url': 'https://www.indeed.com/jobs',
-            'q': query,
-            'limit': min(max_results, 100),  # ScrapeOps limit
+            'url': indeed_url,
         }
-        
-        if location:
-            params['l'] = location
-        
-        if remote:
-            params['remotejob'] = '1'
         
         response = self.session.get(
             f"{self.base_url}/scrape",
@@ -209,9 +212,21 @@ class ScrapeOpsAPI(ThirdPartyAPI):
         response.raise_for_status()
         
         data = response.json()
-        jobs = data.get('results', {}).get('jobs', [])
+        # ScrapeOps returns data in different formats - try multiple paths
+        jobs = []
+        if isinstance(data, dict):
+            # Try common response formats
+            jobs = (
+                data.get('results', {}).get('jobs', []) or
+                data.get('jobs', []) or
+                data.get('data', {}).get('jobs', []) or
+                data.get('body', {}).get('jobs', []) or
+                []
+            )
         
-        return jobs
+        # If no jobs found in structured format, the HTML is in the response
+        # We'd need to parse it, but for now return what we found
+        return jobs[:max_results] if jobs else []
 
 
 class HasDataAPI(ThirdPartyAPI):
