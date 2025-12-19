@@ -36,6 +36,9 @@ class IndeedAdapter(BaseJobSource):
         self.rate_limit_delay = config.get("rate_limit_delay", 3.0) if config else 3.0
         self.base_url = "https://www.indeed.com"
         self.session = requests.Session()
+        self.use_playwright = config.get("use_playwright", False) if config else False
+        self._playwright = None
+        self._browser = None
         
         # Third-party API support
         self.use_scrapeops = config.get("use_scrapeops", False) if config else False
@@ -277,10 +280,22 @@ class IndeedAdapter(BaseJobSource):
                     logger.error(f"Error fetching Indeed page: {e}")
                     break
             
-            logger.info(f"=== INDEED SEARCH COMPLETE ===")
+            logger.info(f"=== INDEED DIRECT SCRAPING COMPLETE ===")
             logger.info(f"Total jobs found: {len(jobs)}")
             logger.info(f"Requested max: {max_results}")
             logger.info(f"Pages fetched: {page_count}")
+            
+            # If we got 0 jobs and Playwright is enabled, try Playwright as fallback
+            if len(jobs) == 0 and self.use_playwright:
+                logger.warning("Direct scraping found 0 jobs, trying Playwright fallback...")
+                try:
+                    playwright_jobs = self._scrape_with_playwright(query, location, remote, max_results)
+                    logger.info(f"Playwright found {len(playwright_jobs)} jobs")
+                    return playwright_jobs[:max_results]
+                except Exception as e:
+                    logger.error(f"Playwright fallback also failed: {e}", exc_info=True)
+                    logger.warning("Returning 0 jobs - both direct scraping and Playwright failed")
+            
             logger.info(f"Returning {min(len(jobs), max_results)} jobs")
             return jobs[:max_results]
             
@@ -457,6 +472,254 @@ class IndeedAdapter(BaseJobSource):
             )
         except Exception as e:
             logger.warning(f"Error parsing job from link: {e}", exc_info=True)
+            return None
+    
+    def _scrape_with_playwright(
+        self,
+        query: str,
+        location: Optional[str],
+        remote: bool,
+        max_results: int
+    ) -> List[JobListing]:
+        """Scrape Indeed jobs using Playwright to handle JavaScript rendering."""
+        try:
+            from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+            
+            logger.info("=== STARTING INDEED PLAYWRIGHT SCRAPING ===")
+            
+            if not self._playwright:
+                self._playwright = sync_playwright().start()
+                self._browser = self._playwright.chromium.launch(headless=True)
+            
+            page = self._browser.new_page()
+            page.set_extra_http_headers({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            })
+            
+            # Build search URL
+            search_url = f"{self.base_url}/jobs"
+            params = {
+                'q': query,
+            }
+            
+            if location:
+                params['l'] = location
+            
+            if remote:
+                params['remotejob'] = '1'
+            
+            # Build URL with params
+            param_str = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items()])
+            url = f"{search_url}?{param_str}"
+            
+            logger.info(f"Navigating to Indeed with Playwright: {url}")
+            page.goto(url, wait_until='networkidle', timeout=30000)
+            time.sleep(3)  # Wait for JavaScript to render job listings
+            
+            jobs = []
+            page_num = 0
+            max_pages = max(5, (max_results // 15) + 1)  # Indeed shows ~15 jobs per page
+            
+            while len(jobs) < max_results and page_num < max_pages:
+                logger.info(f"=== PLAYWRIGHT PAGE {page_num + 1} ===")
+                
+                # Wait for job cards to appear (Indeed uses various selectors)
+                try:
+                    page.wait_for_selector('div[data-jk], a[href*="/viewjob"], .job_seen_beacon, .jobCard', timeout=10000)
+                except PlaywrightTimeout:
+                    logger.warning("Timeout waiting for job cards to appear")
+                    if page_num == 0:  # If first page has no cards, likely blocked or no results
+                        break
+                    else:
+                        page_num += 1
+                        continue
+                
+                # Try multiple selectors for job cards
+                job_cards = []
+                selectors = [
+                    'div[data-jk]',
+                    'a[href*="/viewjob"]',
+                    '.job_seen_beacon',
+                    '.slider_container',
+                    '.jobCard',
+                    'div[class*="job"]',
+                ]
+                
+                for selector in selectors:
+                    found = page.query_selector_all(selector)
+                    if found:
+                        job_cards = found
+                        logger.info(f"Found {len(job_cards)} job cards using selector: {selector}")
+                        break
+                
+                if not job_cards:
+                    logger.warning(f"No job cards found on page {page_num + 1}")
+                    break
+                
+                logger.info(f"Processing {len(job_cards)} job cards (already have {len(jobs)} jobs)")
+                
+                # Parse each card
+                parsed_count = 0
+                for card in job_cards:
+                    if len(jobs) >= max_results:
+                        break
+                    
+                    try:
+                        job = self._parse_indeed_card_playwright(card, page)
+                        if job:
+                            # Check for duplicates
+                            if not any(j.source_url == job.source_url for j in jobs):
+                                jobs.append(job)
+                                parsed_count += 1
+                    except Exception as e:
+                        logger.warning(f"Error parsing Indeed job card: {e}")
+                        continue
+                
+                logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards")
+                
+                # Try to go to next page if we need more results
+                if len(jobs) < max_results and len(job_cards) >= 10:  # If we got a full page
+                    try:
+                        # Look for next page button
+                        next_button = page.query_selector('a[aria-label="Next Page"], a[data-testid="pagination-page-next"], a[aria-label="Next"]')
+                        if next_button:
+                            next_button.click()
+                            page.wait_for_load_state('networkidle', timeout=10000)
+                            time.sleep(2)
+                            page_num += 1
+                        else:
+                            logger.info("No next page button found, stopping pagination")
+                            break
+                    except Exception as e:
+                        logger.warning(f"Error navigating to next page: {e}")
+                        break
+                else:
+                    break
+            
+            page.close()
+            logger.info(f"=== INDEED PLAYWRIGHT SCRAPING COMPLETE ===")
+            logger.info(f"Total jobs found: {len(jobs)}")
+            return jobs[:max_results]
+            
+        except ImportError:
+            logger.error("Playwright not installed. Install with: pip install playwright && playwright install")
+            raise Exception("Playwright not installed. Required for Indeed scraping. Install with: pip install playwright && playwright install chromium")
+        except Exception as e:
+            logger.error(f"Error in Playwright scraping: {e}", exc_info=True)
+            raise Exception(f"Failed to scrape Indeed with Playwright: {str(e)}")
+    
+    def _parse_indeed_card_playwright(self, card, page) -> Optional[JobListing]:
+        """Parse a job card from Indeed using Playwright element."""
+        try:
+            # Get job ID from data-jk attribute or href
+            job_id = card.get_attribute('data-jk') or ''
+            if not job_id:
+                href = card.get_attribute('href') or ''
+                match = re.search(r'jk=([^&]+)', href)
+                if match:
+                    job_id = match.group(1)
+            
+            # Try to get title - Indeed uses various structures
+            title = "Unknown Title"
+            title_selectors = [
+                'h2.jobTitle a',
+                'h2 a',
+                'a[data-jk]',
+                '.jobTitle',
+                'span[title]',
+            ]
+            for selector in title_selectors:
+                try:
+                    title_elem = card.query_selector(selector)
+                    if title_elem:
+                        title = title_elem.inner_text().strip()
+                        if title and title != "Unknown Title":
+                            break
+                except:
+                    continue
+            
+            # If still no title, try getting text directly
+            if title == "Unknown Title":
+                try:
+                    title = card.inner_text().strip().split('\n')[0][:100]
+                except:
+                    pass
+            
+            # Company
+            company = "Unknown Company"
+            company_selectors = [
+                'span[data-testid="company-name"]',
+                '.companyName',
+                '[data-testid="company-name"]',
+            ]
+            for selector in company_selectors:
+                try:
+                    company_elem = card.query_selector(selector)
+                    if company_elem:
+                        company = company_elem.inner_text().strip()
+                        if company:
+                            break
+                except:
+                    continue
+            
+            # Location
+            location = None
+            location_selectors = [
+                'div[data-testid="text-location"]',
+                '.companyLocation',
+                '[data-testid="job-location"]',
+            ]
+            for selector in location_selectors:
+                try:
+                    location_elem = card.query_selector(selector)
+                    if location_elem:
+                        location = location_elem.inner_text().strip()
+                        if location:
+                            break
+                except:
+                    continue
+            
+            # Build URL
+            if job_id:
+                url = f"{self.base_url}/viewjob?jk={job_id}"
+            else:
+                href = card.get_attribute('href') if hasattr(card, 'get_attribute') else None
+                if href:
+                    if href.startswith('/'):
+                        url = urljoin(self.base_url, href)
+                    elif href.startswith('http'):
+                        url = href
+                    else:
+                        return None  # Can't build valid URL
+                else:
+                    return None
+            
+            # Description snippet (if available)
+            description = None
+            try:
+                desc_elem = card.query_selector('.job-snippet, .summary')
+                if desc_elem:
+                    description = desc_elem.inner_text().strip()
+            except:
+                pass
+            
+            # Extract keywords from title and description
+            keywords = self.extract_keywords(f"{title} {description or ''}")
+            
+            return JobListing(
+                title=title,
+                company=company,
+                location=location,
+                source="indeed",
+                source_url=url,
+                description=description,
+                raw_description=description,
+                keywords=keywords,
+                application_type="external",
+                metadata={"job_id": job_id}
+            )
+        except Exception as e:
+            logger.warning(f"Error parsing Indeed Playwright card: {e}", exc_info=True)
             return None
     
     def _parse_salary(self, salary_text: Optional[str]) -> tuple[Optional[int], Optional[int]]:
