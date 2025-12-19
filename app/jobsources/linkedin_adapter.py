@@ -98,25 +98,28 @@ class LinkedInAdapter(BaseJobSource):
             except Exception as e:
                 logger.warning(f"Apify API failed: {e}, falling back to direct scraping")
         
-        # Try direct scraping with improved techniques (FREE, no API key required)
+        # Try direct scraping first (may fail due to auth requirements)
+        direct_scraping_failed = False
         try:
             logger.info("Attempting direct LinkedIn scraping (free, no API key required)")
             return self._scrape_with_requests(query, location, remote, max_results)
         except Exception as e:
-            logger.error(f"Direct scraping failed: {e}", exc_info=True)
-            # Don't use mock data - raise error to indicate real scraping failed
-            raise Exception(f"Failed to scrape LinkedIn jobs: {str(e)}. LinkedIn requires authentication or a third-party API (Apify, Mantiks) for scraping. Enable one of these options in config.")
+            logger.warning(f"Direct scraping failed: {e}, trying Playwright if enabled")
+            direct_scraping_failed = True
+            direct_error = str(e)
         
-        # Uncomment below if you want to try Playwright scraping (requires LinkedIn login)
-        # if not self.use_playwright:
-        #     logger.warning("Playwright not enabled, falling back to mock data")
-        #     return self._generate_mock_jobs(query, location, remote, min(max_results, 5))
-        # 
-        # try:
-        #     return self._scrape_with_playwright(query, location, remote, max_results)
-        # except Exception as e:
-        #     logger.error(f"Error scraping LinkedIn: {e}", exc_info=True)
-        #     return self._generate_mock_jobs(query, location, remote, min(max_results, 5))
+        # Try Playwright if direct scraping failed and Playwright is enabled
+        if direct_scraping_failed and self.use_playwright:
+            try:
+                logger.info("Attempting LinkedIn scraping with Playwright")
+                return self._scrape_with_playwright(query, location, remote, max_results)
+            except Exception as e2:
+                logger.error(f"Playwright scraping also failed: {e2}", exc_info=True)
+                raise Exception(f"Failed to scrape LinkedIn jobs: Direct scraping failed ({direct_error}), Playwright also failed ({str(e2)}). LinkedIn may require authentication or login.")
+        
+        # If we get here, direct scraping failed and Playwright is not enabled
+        if direct_scraping_failed:
+            raise Exception(f"Failed to scrape LinkedIn jobs: {direct_error}. Enable Playwright in config (use_playwright: true) or use a third-party API (Apify, Mantiks).")
     
     def _scrape_with_playwright(
         self,
@@ -160,7 +163,8 @@ class LinkedInAdapter(BaseJobSource):
             
             jobs = []
             scroll_attempts = 0
-            max_scrolls = max(1, max_results // 10)
+            # Increase max scrolls to fetch more results (scroll more aggressively)
+            max_scrolls = max(5, max_results // 5)  # Allow more scrolling
             
             while len(jobs) < max_results and scroll_attempts < max_scrolls:
                 # Find job cards

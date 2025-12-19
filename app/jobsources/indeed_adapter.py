@@ -101,7 +101,10 @@ class IndeedAdapter(BaseJobSource):
             start = 0
             results_per_page = 10
             
-            while len(jobs) < max_results and start < max_results:
+            # Allow fetching more pages, but add safety limit to prevent infinite loops
+            max_pages = max(10, (max_results // results_per_page) + 2)  # Allow extra pages
+            page_count = 0
+            while len(jobs) < max_results and page_count < max_pages:
                 # Build search URL
                 params = {
                     'q': query,
@@ -171,6 +174,7 @@ class IndeedAdapter(BaseJobSource):
                         break
                     
                     start += results_per_page
+                    page_count += 1
                     time.sleep(self.rate_limit_delay)  # Rate limit between pages
                     
                 except requests.RequestException as e:
