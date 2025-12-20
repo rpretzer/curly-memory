@@ -80,17 +80,6 @@ class SearchAgent:
                 config=monster_config,
                 api_key=None  # Monster doesn't have API key
             )
-        
-        # Monster / Ohio Means Jobs
-        if job_sources_config.get("monster", {}).get("enabled", False):
-            monster_config = job_sources_config.get("monster", {})
-            # Add third-party API keys to config if available
-            if config.scrapeops_api_key:
-                monster_config["scrapeops_api_key"] = config.scrapeops_api_key
-            self.sources["monster"] = MonsterAdapter(
-                config=monster_config,
-                api_key=config.monster_api_key
-            )
     
     def search(
         self,
@@ -121,7 +110,12 @@ class SearchAgent:
             raise ValueError("At least one job title must be provided")
         
         # Determine which sources to search
-        sources_to_search = sources or list(self.sources.keys())
+        # Default sources: linkedin, indeed, monster, wellfound (if enabled)
+        if sources:
+            sources_to_search = sources
+        else:
+            default_sources = ["linkedin", "indeed", "monster", "wellfound"]
+            sources_to_search = [s for s in default_sources if s in self.sources]
         sources_searched = []
         all_jobs = []
         
