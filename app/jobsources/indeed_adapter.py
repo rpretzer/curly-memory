@@ -935,10 +935,9 @@ class IndeedAdapter(BaseJobSource):
                 
                 logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards")
                 
-                # If we got no jobs from this page, stop trying
+                # If we got no jobs, log a warning
                 if parsed_count == 0:
-                    logger.warning("No jobs parsed from ScrapeOps HTML, stopping")
-                    break
+                    logger.warning("No jobs parsed from ScrapeOps HTML - may need pagination or different parsing")
                 
                 logger.info(f"Total jobs from ScrapeOps: {len(jobs)}")
             else:
