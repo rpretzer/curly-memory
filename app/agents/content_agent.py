@@ -250,13 +250,22 @@ Generate bullet points that:
             profile = get_profile_dict(self.profile_id)
             
             # Use specialized temperature for cover letters
-            temp_llm = ChatOpenAI(
-                model=self.llm_model,
-                temperature=config.get_llm_defaults().get("cover_letter_temperature", 0.7),
-                top_p=self.top_p,
-                max_tokens=self.max_tokens,
-                api_key=config.llm.api_key,
-            )
+            cover_letter_temp = config.get_llm_defaults().get("cover_letter_temperature", 0.7)
+            if self.llm_provider.lower() == "ollama":
+                temp_llm = ChatOllama(
+                    model=self.llm_model,
+                    temperature=cover_letter_temp,
+                    base_url=self.ollama_base_url,
+                    num_predict=self.max_tokens,
+                )
+            else:
+                temp_llm = ChatOpenAI(
+                    model=self.llm_model,
+                    temperature=cover_letter_temp,
+                    top_p=self.top_p,
+                    max_tokens=self.max_tokens,
+                    api_key=config.llm.api_key if config.llm.api_key else None,
+                )
             
             prompt_template = self.prompts.get("cover_letter_template", """
 Write a professional cover letter for this position.
@@ -403,7 +412,8 @@ Provide a direct, professional answer that demonstrates relevant experience.
     def generate_all_content(
         self,
         job: Job,
-        run_id: Optional[int] = None
+        run_id: Optional[int] = None,
+        skip_existing: bool = True
     ) -> Job:
         """
         Generate all content for a job and update the job record.
@@ -411,6 +421,7 @@ Provide a direct, professional answer that demonstrates relevant experience.
         Args:
             job: Job to generate content for
             run_id: Optional run ID for logging
+            skip_existing: If True, skip generating content that already exists (efficiency)
             
         Returns:
             Updated Job model
@@ -418,30 +429,83 @@ Provide a direct, professional answer that demonstrates relevant experience.
         logger.info(f"Generating content for job: {job.id} - {job.title}")
         
         errors = []
+        content_generated = False
         
-        # Generate summary
-        try:
-            job.llm_summary = self.generate_summary(job, run_id)
-        except Exception as e:
-            logger.error(f"Error generating summary for job {job.id}: {e}", exc_info=True)
-            errors.append(f"Summary generation failed: {str(e)}")
-            job.llm_summary = job.description[:500] if job.description else "Summary generation failed."
+        # Check if LLM is available
+        if not self.llm:
+            error_msg = f"LLM not initialized (provider: {self.llm_provider})"
+            logger.error(error_msg)
+            if self.log_agent and run_id:
+                self.log_agent.log_error(
+                    agent_name=self.agent_name,
+                    error=Exception(error_msg),
+                    run_id=run_id,
+                    job_id=job.id,
+                    step="generate_all_content",
+                )
+            job.application_error = error_msg
+            self.db.commit()
+            return job
         
-        # Generate resume points
-        try:
-            job.tailored_resume_points = self.generate_resume_points(job, run_id)
-        except Exception as e:
-            logger.error(f"Error generating resume points for job {job.id}: {e}", exc_info=True)
-            errors.append(f"Resume points generation failed: {str(e)}")
-            job.tailored_resume_points = []
+        # Generate summary (skip if already exists and skip_existing is True)
+        if not skip_existing or not job.llm_summary:
+            try:
+                logger.debug(f"Generating summary for job {job.id} (existing: {bool(job.llm_summary)})")
+                job.llm_summary = self.generate_summary(job, run_id)
+                content_generated = True
+            except Exception as e:
+                logger.error(f"Error generating summary for job {job.id}: {e}", exc_info=True)
+                errors.append(f"Summary generation failed: {str(e)}")
+                if self.log_agent and run_id:
+                    self.log_agent.log_error(
+                        agent_name=self.agent_name,
+                        error=e,
+                        run_id=run_id,
+                        job_id=job.id,
+                        step="generate_summary",
+                    )
+        else:
+            logger.debug(f"Skipping summary generation for job {job.id} (already exists)")
         
-        # Generate cover letter
-        try:
-            job.cover_letter_draft = self.generate_cover_letter(job, run_id)
-        except Exception as e:
-            logger.error(f"Error generating cover letter for job {job.id}: {e}", exc_info=True)
-            errors.append(f"Cover letter generation failed: {str(e)}")
-            job.cover_letter_draft = ""
+        # Generate resume points (skip if already exists)
+        if not skip_existing or not job.tailored_resume_points:
+            try:
+                logger.debug(f"Generating resume points for job {job.id} (existing: {bool(job.tailored_resume_points)})")
+                job.tailored_resume_points = self.generate_resume_points(job, run_id)
+                content_generated = True
+            except Exception as e:
+                logger.error(f"Error generating resume points for job {job.id}: {e}", exc_info=True)
+                errors.append(f"Resume points generation failed: {str(e)}")
+                if self.log_agent and run_id:
+                    self.log_agent.log_error(
+                        agent_name=self.agent_name,
+                        error=e,
+                        run_id=run_id,
+                        job_id=job.id,
+                        step="generate_resume_points",
+                    )
+        else:
+            logger.debug(f"Skipping resume points generation for job {job.id} (already exists)")
+        
+        # Generate cover letter (skip if already exists)
+        if not skip_existing or not job.cover_letter_draft:
+            try:
+                logger.debug(f"Generating cover letter for job {job.id} (existing: {bool(job.cover_letter_draft)})")
+                job.cover_letter_draft = self.generate_cover_letter(job, run_id)
+                content_generated = True
+            except Exception as e:
+                logger.error(f"Error generating cover letter for job {job.id}: {e}", exc_info=True)
+                errors.append(f"Cover letter generation failed: {str(e)}")
+                if self.log_agent and run_id:
+                    self.log_agent.log_error(
+                        agent_name=self.agent_name,
+                        error=e,
+                        run_id=run_id,
+                        job_id=job.id,
+                        step="generate_cover_letter",
+                    )
+        else:
+            logger.debug(f"Skipping cover letter generation for job {job.id} (already exists)")
         
         # Update status - mark as generated (even if some parts failed, we have content)
         from app.models import JobStatus

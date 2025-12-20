@@ -68,7 +68,7 @@ class LogAgent:
             error_message=error_message,
             error_stack=error_stack,
             reasoning=reasoning,
-            metadata=metadata or {},
+            extra_metadata=metadata or {},
             llm_model=llm_model,
             llm_tokens_used=llm_tokens_used,
             llm_temperature=llm_temperature,
