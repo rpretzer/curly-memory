@@ -68,7 +68,7 @@ job_sources:
     max_retries: 3
     retry_delay: 1
   monster:
-    enabled: false  # Enable to use Monster.com / Ohio Means Jobs
+    enabled: true  # Enabled for Ohio Means Jobs
     max_results: 50
     rate_limit_delay: 3.0
     use_playwright: false
