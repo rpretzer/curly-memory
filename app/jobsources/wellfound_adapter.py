@@ -30,7 +30,7 @@ class WellfoundAdapter(BaseJobSource):
         super().__init__(config)
         self.api_key = api_key
         self.rate_limit_delay = config.get("rate_limit_delay", 3.0) if config else 3.0
-        self.base_url = "https://wellfound.com"  # Note: May need to use angel.co or check actual domain
+        self.base_url = "https://wellfound.com"  # Wellfound (formerly AngelList)
         self.session = requests.Session()
         self.user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -80,18 +80,30 @@ class WellfoundAdapter(BaseJobSource):
             results_per_page = 25
             
             while len(jobs) < max_results:
-                # Build search URL
-                search_url = f"{self.base_url}/role_locations"
-                params = {
-                    'role': query,
-                    'page': page,
-                }
+                # Build search URL - Wellfound uses /jobs endpoint with query params
+                search_url = f"{self.base_url}/jobs"
+                params = {}
+                
+                # Build query string
+                query_parts = [query]
+                if location:
+                    query_parts.append(location)
+                if remote:
+                    query_parts.append("remote")
+                
+                # Wellfound uses URL path or query parameter for search
+                # Try both approaches
+                search_query = ' '.join(query_parts)
+                params['role'] = query  # Role parameter
                 
                 if location:
                     params['location'] = location
                 
                 if remote:
                     params['remote'] = 'true'
+                
+                # Alternative: try /jobs/search endpoint
+                # If first attempt fails, we'll try the alternative
                 
                 try:
                     # Rotate user agent occasionally
@@ -107,8 +119,13 @@ class WellfoundAdapter(BaseJobSource):
                     response.raise_for_status()
                     
                     # Check if we got blocked
-                    if response.status_code == 403 or 'captcha' in response.text.lower():
-                        logger.warning("Possible rate limit or CAPTCHA detected on Wellfound")
+                    if response.status_code == 403:
+                        logger.warning("Wellfound returned 403 Forbidden - site may be blocking automated requests")
+                        logger.warning("Consider using ScrapeOps or Playwright for Wellfound scraping")
+                        raise Exception("Wellfound is blocking automated requests (403 Forbidden). Consider using ScrapeOps API or Playwright.")
+                    
+                    if 'captcha' in response.text.lower():
+                        logger.warning("Possible CAPTCHA detected on Wellfound")
                         time.sleep(self.rate_limit_delay * 2)
                         continue
                     

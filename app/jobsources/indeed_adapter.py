@@ -874,10 +874,10 @@ class IndeedAdapter(BaseJobSource):
                 job_cards = []
                 selectors = [
                     ('div', {'data-jk': True}),
-                    ('div', {'class': 'job_seen_beacon'}),
-                    ('div', {'class': 'slider_container'}),
                     ('td', {'data-jk': True}),
                     ('a', {'data-jk': True}),
+                    ('div', {'class': re.compile(r'job_seen_beacon')}),
+                    ('div', {'class': re.compile(r'slider_container')}),
                 ]
                 
                 for tag, attrs in selectors:
@@ -887,22 +887,56 @@ class IndeedAdapter(BaseJobSource):
                         logger.info(f"Found {len(job_cards)} job cards in ScrapeOps HTML using selector: {tag}")
                         break
                 
-                # If no cards found, try generic link approach
+                # If no cards found, try generic link approach with more patterns
                 if not job_cards:
+                    # Try multiple link patterns
                     job_links = soup.find_all('a', href=re.compile(r'/viewjob|jk='))
+                    if not job_links:
+                        # Try CSS selector as fallback
+                        job_links = soup.select('a[href*="/viewjob"], a[href*="jk="]')
+                    
                     if job_links:
                         job_cards = job_links
                         logger.info(f"Found {len(job_cards)} job links in ScrapeOps HTML")
                 
-                # Parse each job card
-                for card in job_cards[:max_results]:
+                # Also try finding job titles as another fallback
+                if not job_cards:
+                    job_titles = soup.find_all('h2', class_=re.compile(r'jobTitle|job-title', re.I))
+                    if job_titles:
+                        # Find parent elements that might be job cards
+                        for title in job_titles:
+                            parent = title.find_parent('div') or title.find_parent('td') or title.find_parent('a')
+                            if parent and parent not in job_cards:
+                                job_cards.append(parent)
+                        if job_cards:
+                            logger.info(f"Found {len(job_cards)} job cards via job title elements")
+                
+                # Parse each job card - try both parsing methods
+                for card in job_cards[:max_results * 2]:  # Get more to account for parsing failures
+                    if len(jobs) >= max_results:
+                        break
                     try:
+                        # Try standard parsing first
                         job = self._parse_job_card(card)
+                        if not job:
+                            # Try link-based parsing as fallback
+                            if card.name == 'a':
+                                job = self._parse_job_from_link(card)
+                        
                         if job:
-                            jobs.append(job)
+                            # Check for duplicates before adding
+                            if not any(j.source_url == job.source_url for j in jobs):
+                                jobs.append(job)
                     except Exception as e:
-                        logger.warning(f"Error parsing ScrapeOps job card: {e}")
+                        logger.debug(f"Error parsing ScrapeOps job card: {e}")
                         continue
+                
+                logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards on page {page_num + 1}")
+                
+                # If we got no jobs from this page and we've tried multiple parsing methods, break
+                if parsed_count == 0 and page_num > 0:
+                    logger.warning("No jobs parsed from this page, stopping pagination")
+                    break
                 
                 logger.info(f"Successfully parsed {len(jobs)} jobs from ScrapeOps HTML")
             else:

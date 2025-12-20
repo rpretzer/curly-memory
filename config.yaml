@@ -51,7 +51,7 @@ job_sources:
     max_retries: 3
     retry_delay: 1
     linkedin_email: rpretzer@gmail.com
-    linkedin_password: Rutger$2
+    linkedin_password: Rutger$11
   indeed:
     enabled: true
     max_results: 50
@@ -68,14 +68,14 @@ job_sources:
     max_retries: 3
     retry_delay: 1
   monster:
-    enabled: true  # Enabled for Ohio Means Jobs
+    enabled: true
     max_results: 50
-    rate_limit_delay: 3.0
+    rate_limit_delay: 3
     use_playwright: false
-    use_scrapeops: true  # Recommended for Monster
-    use_ohio_means_jobs: true  # Set to true for Ohio Means Jobs, false for regular Monster.com
+    use_scrapeops: true
+    use_ohio_means_jobs: true
     max_retries: 3
-    retry_delay: 2.0
+    retry_delay: 2
 features:
   enable_playwright: true
   enable_auto_apply: false
