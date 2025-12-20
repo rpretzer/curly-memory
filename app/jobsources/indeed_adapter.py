@@ -866,6 +866,7 @@ class IndeedAdapter(BaseJobSource):
         
         logger.info(f"Starting ScrapeOps search with pagination: max_results={max_results}, max_pages={max_pages}")
         
+        pages_fetched = 0
         for page_num in range(max_pages):
             start = page_num * results_per_page
             
@@ -961,6 +962,7 @@ class IndeedAdapter(BaseJobSource):
                         continue
                 
                 logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards on page {page_num + 1}")
+                pages_fetched += 1
                 
                 # If we got no jobs from this page, stop pagination
                 if parsed_count == 0:
@@ -972,10 +974,10 @@ class IndeedAdapter(BaseJobSource):
                     time.sleep(1)  # Small delay between pages
                     
             except Exception as e:
-                logger.error(f"Error fetching ScrapeOps page {page_num + 1}: {e}")
+                logger.error(f"Error fetching ScrapeOps page {page_num + 1}: {e}", exc_info=True)
                 break
         
-        logger.info(f"ScrapeOps search complete: {len(jobs)} total jobs from {page_num + 1} page(s)")
+        logger.info(f"ScrapeOps search complete: {len(jobs)} total jobs from {pages_fetched} page(s)")
         return jobs[:max_results]
     
     def _search_via_hasdata(
