@@ -912,6 +912,7 @@ class IndeedAdapter(BaseJobSource):
                             logger.info(f"Found {len(job_cards)} job cards via job title elements")
                 
                 # Parse each job card - try both parsing methods
+                parsed_count = 0
                 for card in job_cards[:max_results * 2]:  # Get more to account for parsing failures
                     if len(jobs) >= max_results:
                         break
@@ -920,25 +921,26 @@ class IndeedAdapter(BaseJobSource):
                         job = self._parse_job_card(card)
                         if not job:
                             # Try link-based parsing as fallback
-                            if card.name == 'a':
+                            if hasattr(card, 'name') and card.name == 'a':
                                 job = self._parse_job_from_link(card)
                         
                         if job:
                             # Check for duplicates before adding
                             if not any(j.source_url == job.source_url for j in jobs):
                                 jobs.append(job)
+                                parsed_count += 1
                     except Exception as e:
                         logger.debug(f"Error parsing ScrapeOps job card: {e}")
                         continue
                 
-                logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards on page {page_num + 1}")
+                logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards")
                 
-                # If we got no jobs from this page and we've tried multiple parsing methods, break
-                if parsed_count == 0 and page_num > 0:
-                    logger.warning("No jobs parsed from this page, stopping pagination")
+                # If we got no jobs from this page, stop trying
+                if parsed_count == 0:
+                    logger.warning("No jobs parsed from ScrapeOps HTML, stopping")
                     break
                 
-                logger.info(f"Successfully parsed {len(jobs)} jobs from ScrapeOps HTML")
+                logger.info(f"Total jobs from ScrapeOps: {len(jobs)}")
             else:
                 # Old JSON format (if ScrapeOps ever returns JSON)
                 for raw_job in raw_response:
