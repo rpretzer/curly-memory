@@ -855,18 +855,44 @@ class IndeedAdapter(BaseJobSource):
         remote: bool,
         max_results: int
     ) -> List[JobListing]:
-        """Search using ScrapeOps API."""
-        raw_response = self.scrapeops_api.search_jobs(query, location, remote, max_results)
-        
+        """Search using ScrapeOps API with pagination support."""
         jobs = []
+        seen_urls = set()  # Track URLs to avoid duplicates across pages
         
-        # ScrapeOps returns HTML, not JSON jobs
-        if raw_response and isinstance(raw_response, list) and len(raw_response) > 0:
-            html_item = raw_response[0]
-            if isinstance(html_item, dict) and html_item.get('scrapeops_html'):
+        # Indeed shows ~15 jobs per page, so we need multiple pages
+        results_per_page = 15
+        max_pages = max(3, (max_results // results_per_page) + 1)
+        max_pages = min(max_pages, 10)  # Cap at 10 pages to avoid too many requests
+        
+        logger.info(f"Starting ScrapeOps search with pagination: max_results={max_results}, max_pages={max_pages}")
+        
+        for page_num in range(max_pages):
+            start = page_num * results_per_page
+            
+            # Skip if we already have enough jobs
+            if len(jobs) >= max_results:
+                break
+            
+            logger.info(f"Fetching ScrapeOps page {page_num + 1} (start={start})")
+            
+            try:
+                # Make request with pagination
+                raw_response = self.scrapeops_api.search_jobs(
+                    query, location, remote, max_results, start=start
+                )
+                
+                if not raw_response or not isinstance(raw_response, list) or len(raw_response) == 0:
+                    logger.warning(f"No response from ScrapeOps for page {page_num + 1}")
+                    break
+                
+                html_item = raw_response[0]
+                if not isinstance(html_item, dict) or not html_item.get('scrapeops_html'):
+                    logger.warning(f"Unexpected response format from ScrapeOps for page {page_num + 1}")
+                    break
+                
                 # Parse the HTML response
                 html_content = html_item.get('html_content', '')
-                logger.info(f"Parsing ScrapeOps HTML response ({len(html_content)} chars)")
+                logger.info(f"Parsing ScrapeOps HTML response page {page_num + 1} ({len(html_content)} chars)")
                 
                 soup = BeautifulSoup(html_content, 'html.parser')
                 
@@ -925,33 +951,32 @@ class IndeedAdapter(BaseJobSource):
                                 job = self._parse_job_from_link(card)
                         
                         if job:
-                            # Check for duplicates before adding
-                            if not any(j.source_url == job.source_url for j in jobs):
+                            # Check for duplicates before adding (across all pages)
+                            if job.source_url not in seen_urls:
                                 jobs.append(job)
+                                seen_urls.add(job.source_url)
                                 parsed_count += 1
                     except Exception as e:
                         logger.debug(f"Error parsing ScrapeOps job card: {e}")
                         continue
                 
-                logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards")
+                logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards on page {page_num + 1}")
                 
-                # If we got no jobs, log a warning
+                # If we got no jobs from this page, stop pagination
                 if parsed_count == 0:
-                    logger.warning("No jobs parsed from ScrapeOps HTML - may need pagination or different parsing")
+                    logger.warning(f"No jobs parsed from ScrapeOps page {page_num + 1}, stopping pagination")
+                    break
                 
-                logger.info(f"Total jobs from ScrapeOps: {len(jobs)}")
-            else:
-                # Old JSON format (if ScrapeOps ever returns JSON)
-                for raw_job in raw_response:
-                    try:
-                        job = self._normalize_scrapeops_job(raw_job)
-                        if job:
-                            jobs.append(job)
-                    except Exception as e:
-                        logger.warning(f"Error normalizing ScrapeOps job: {e}")
-                        continue
+                # Rate limit between pages
+                if page_num < max_pages - 1 and len(jobs) < max_results:
+                    time.sleep(1)  # Small delay between pages
+                    
+            except Exception as e:
+                logger.error(f"Error fetching ScrapeOps page {page_num + 1}: {e}")
+                break
         
-        return jobs
+        logger.info(f"ScrapeOps search complete: {len(jobs)} total jobs from {page_num + 1} page(s)")
+        return jobs[:max_results]
     
     def _search_via_hasdata(
         self,

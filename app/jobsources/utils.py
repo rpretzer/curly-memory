@@ -182,9 +182,10 @@ class ScrapeOpsAPI(ThirdPartyAPI):
         location: Optional[str] = None,
         remote: bool = False,
         max_results: int = 50,
+        start: int = 0,
         **kwargs
     ) -> List[Dict[str, Any]]:
-        """Search Indeed jobs via ScrapeOps API."""
+        """Search Indeed jobs via ScrapeOps API with pagination support."""
         if not self.api_key:
             raise ValueError("ScrapeOps API key required")
         
@@ -195,6 +196,8 @@ class ScrapeOpsAPI(ThirdPartyAPI):
             indeed_params['l'] = location
         if remote:
             indeed_params['remotejob'] = '1'
+        if start > 0:
+            indeed_params['start'] = start
         
         indeed_url = f"https://www.indeed.com/jobs?{urlencode(indeed_params)}"
         
