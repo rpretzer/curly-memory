@@ -713,17 +713,66 @@ async def validate_linkedin_credentials(
         
         try:
             async with async_playwright() as playwright:
-                browser = await playwright.chromium.launch(headless=True)
-                page = await browser.new_page()
+                # Launch browser with stealth settings (headless=False helps avoid detection)
+                browser = await playwright.chromium.launch(
+                    headless=False,  # Visible browser is less likely to trigger CAPTCHA
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--no-sandbox',
+                    ]
+                )
+                
+                # Create context with realistic viewport and user agent
+                context = await browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    locale='en-US',
+                    timezone_id='America/New_York',
+                )
+                
+                # Add stealth scripts to avoid detection
+                await context.add_init_script("""
+                    // Remove webdriver property
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                    
+                    // Override plugins
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5]
+                    });
+                    
+                    // Override languages
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['en-US', 'en']
+                    });
+                    
+                    // Chrome runtime
+                    window.chrome = {
+                        runtime: {}
+                    };
+                    
+                    // Permissions
+                    const originalQuery = window.navigator.permissions.query;
+                    window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                            Promise.resolve({ state: Notification.permission }) :
+                            originalQuery(parameters)
+                    );
+                """)
+                
+                page = await context.new_page()
                 
                 try:
                     # Navigate to login page
                     await page.goto("https://www.linkedin.com/login", wait_until='networkidle', timeout=30000)
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(3)  # Slightly longer wait
                     
                     # Enter email
                     email_input = await page.query_selector('input[name="session_key"]')
                     if not email_input:
+                        await context.close()
                         await browser.close()
                         return {
                             "valid": False,
@@ -735,6 +784,7 @@ async def validate_linkedin_credentials(
                     # Enter password
                     password_input = await page.query_selector('input[name="session_password"]')
                     if not password_input:
+                        await context.close()
                         await browser.close()
                         return {
                             "valid": False,
