@@ -844,6 +844,14 @@ export default function SettingsPage() {
                   <p className="text-xs text-blue-600 mt-2">
                     ⚠️ These credentials will be saved to config.yaml. Keep your config file secure. You must validate credentials before saving.
                   </p>
+                  <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+                    <strong>Note:</strong> LinkedIn may show a CAPTCHA during validation. If this happens, you can:
+                    <ul className="list-disc list-inside mt-1 ml-2">
+                      <li>Wait a few minutes and try again</li>
+                      <li>Validate credentials at a different time</li>
+                      <li>Use credentials that have been recently logged in manually</li>
+                    </ul>
+                  </div>
                 </div>
                 <div className="space-y-4">
                   <div>

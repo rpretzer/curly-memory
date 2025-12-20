@@ -766,6 +766,7 @@ async def validate_linkedin_credentials(
                         if captcha:
                             error_message = "LinkedIn is requesting CAPTCHA verification. Please try again later."
                     
+                    await context.close()
                     await browser.close()
                     
                     if login_successful:
@@ -782,7 +783,14 @@ async def validate_linkedin_credentials(
                             "error": error_msg
                         }
                 except Exception as e:
-                    await browser.close()
+                    try:
+                        await context.close()
+                    except:
+                        pass
+                    try:
+                        await browser.close()
+                    except:
+                        pass
                     raise
                 
         except ImportError:
