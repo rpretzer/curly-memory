@@ -62,7 +62,7 @@ job_sources:
     max_retries: 3
     retry_delay: 2
   wellfound:
-    enabled: true
+    enabled: false  # Disabled: 403 Forbidden - site blocking automated requests
     max_results: 50
     rate_limit_delay: 3
     max_retries: 3
@@ -85,6 +85,41 @@ scheduler:
   enabled: true
   run_frequency_hours: 24
   run_at_time: 09:00
+
+# Advanced RAG Configuration
+rag:
+  enabled: true
+  # Embedding configuration
+  embeddings:
+    provider: "huggingface"  # Options: "openai", "ollama", "huggingface"
+    model: "sentence-transformers/all-MiniLM-L6-v2"  # HuggingFace model for local embeddings
+    # For OpenAI: "text-embedding-3-small" or "text-embedding-3-large"
+    # For Ollama: "llama3.2" or other Ollama embedding model
+  # Semantic chunking configuration
+  chunking:
+    chunk_size: 500
+    chunk_overlap: 50
+    similarity_threshold: 0.7  # Lower = more chunks (0.0-1.0)
+    min_chunk_size: 100
+  # Two-stage retrieval configuration
+  retrieval:
+    stage1_k: 50  # Number of candidates to retrieve in first stage
+    stage2_k: 5   # Number of final results after reranking
+    rerank_threshold: 0.5  # Minimum rerank score (optional)
+    reranker_model: "BAAI/bge-reranker-base"  # Re-ranker model name
+  # HyDE configuration
+  hyde:
+    enabled: true  # Enable Hypothetical Document Embeddings
+    template: null  # Custom template (null = use default)
+  # RAG agent configuration
+  agent:
+    max_iterations: 3  # Maximum retrieval cycles
+    min_relevance_score: 0.7  # Minimum relevance score (0.0-1.0)
+  # Vector store configuration
+  vector_store:
+    collection_name: "job_descriptions"
+    persist_directory: "./vector_store"
+
 content_prompts:
   resume_summary: 'Generate 3-5 tailored bullet points for a resume based on the job
     description.

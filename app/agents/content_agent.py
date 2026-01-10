@@ -15,6 +15,14 @@ from app.agents.log_agent import LogAgent
 
 logger = logging.getLogger(__name__)
 
+# Optional RAG integration
+try:
+    from app.rag.service import JobRAGService
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    logger.warning("RAG module not available, content generation will use basic approach")
+
 
 class ContentGenerationAgent:
     """Agent responsible for generating tailored resume, cover letter, and application content."""
@@ -24,7 +32,9 @@ class ContentGenerationAgent:
         db: Session,
         log_agent: Optional[LogAgent] = None,
         llm_config: Optional[Dict[str, Any]] = None,
-        profile_id: int = 1
+        profile_id: int = 1,
+        use_rag: bool = True,
+        rag_service: Optional[Any] = None,
     ):
         """
         Initialize the content generation agent.
@@ -34,11 +44,30 @@ class ContentGenerationAgent:
             log_agent: Optional log agent for structured logging
             llm_config: Optional LLM configuration override
             profile_id: User profile ID to use
+            use_rag: Whether to use RAG for context retrieval (default: True)
+            rag_service: Optional JobRAGService instance (will be created if not provided and use_rag=True)
         """
         self.db = db
         self.log_agent = log_agent
         self.agent_name = "ContentGenerationAgent"
         self.profile_id = profile_id
+        
+        # Check if RAG should be enabled
+        rag_config = config.yaml_config.get("rag", {})
+        self.use_rag = use_rag and rag_config.get("enabled", True) and RAG_AVAILABLE
+        
+        # Initialize RAG service if enabled
+        self.rag_service = None
+        if self.use_rag:
+            try:
+                if rag_service:
+                    self.rag_service = rag_service
+                else:
+                    self.rag_service = JobRAGService(db=db)
+                logger.info("RAG service initialized for ContentGenerationAgent")
+            except Exception as e:
+                logger.warning(f"Failed to initialize RAG service: {e}, falling back to basic generation")
+                self.use_rag = False
         
         # Get LLM configuration
         default_llm = config.get_llm_defaults()
@@ -148,6 +177,7 @@ Job Description:
     ) -> List[str]:
         """
         Generate tailored resume bullet points for the job.
+        Uses RAG to retrieve similar job descriptions for better context if enabled.
         
         Args:
             job: Job to tailor resume for
@@ -162,12 +192,47 @@ Job Description:
         try:
             profile = get_profile_dict(self.profile_id)
             
+            # Build query for RAG retrieval if enabled
+            similar_jobs_context = ""
+            if self.use_rag and self.rag_service:
+                try:
+                    # Build query from job title and key requirements
+                    query = f"{job.title} {job.company}"
+                    if job.description:
+                        # Extract first few sentences as query
+                        sentences = job.description.split(".")[:2]
+                        query += " " + ". ".join(sentences)
+                    
+                    # Retrieve similar jobs for context
+                    similar_jobs = self.rag_service.retrieve_similar_jobs(
+                        query=query,
+                        job_id=job.id,
+                        k=3,  # Get top 3 similar jobs
+                    )
+                    
+                    if similar_jobs:
+                        context_parts = []
+                        for similar in similar_jobs[:2]:  # Use top 2
+                            similar_job = similar.get("job")
+                            if similar_job and similar_job.description:
+                                context_parts.append(
+                                    f"Similar Role: {similar_job.title} at {similar_job.company}\n"
+                                    f"Requirements: {similar_job.description[:300]}..."
+                                )
+                        
+                        if context_parts:
+                            similar_jobs_context = "\n\nSimilar Job Requirements for Context:\n" + "\n\n".join(context_parts)
+                            logger.debug(f"Retrieved {len(similar_jobs)} similar jobs for context")
+                except Exception as e:
+                    logger.warning(f"RAG retrieval failed for resume points: {e}, continuing without context")
+            
             prompt_template = self.prompts.get("resume_summary", """
 Generate 3-5 tailored bullet points for a resume based on the job description.
 Focus on matching the job requirements with relevant experience.
 
 Job Requirements:
 {job_description}
+{similar_jobs_context}
 
 Candidate Profile:
 - Current Title: {current_title}
@@ -184,6 +249,7 @@ Generate bullet points that:
             
             prompt = prompt_template.format(
                 job_description=job.description or job.raw_description or "",
+                similar_jobs_context=similar_jobs_context,
                 current_title=profile.get("current_title", "Product Manager"),
                 skills=", ".join(profile.get("skills", [])[:10]),
                 experience_summary=profile.get("experience_summary", "") or profile.get("resume_text", "")[:500],

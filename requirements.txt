@@ -17,6 +17,13 @@ langchain-community==0.3.0
 langgraph==0.2.40
 openai==1.54.0
 
+# RAG & Vector Stores
+chromadb==0.4.22
+sentence-transformers==2.3.1
+torch==2.1.2
+scikit-learn==1.4.0
+numpy==1.26.3
+
 # Browser Automation
 playwright==1.40.0
 
