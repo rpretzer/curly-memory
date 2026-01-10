@@ -182,30 +182,65 @@ async def create_run(
             llm_config=request.llm_config or {},
         )
         
-        # Start pipeline in background
-        async def run_pipeline():
+        # Start pipeline in background - need to capture values before async context
+        run_id = run.id
+        search_titles = request.search.titles
+        search_locations = request.search.locations or []
+        search_remote = request.search.remote
+        search_keywords = request.search.keywords
+        search_sources = request.search.sources
+        search_max_results = request.search.max_results
+        search_target_companies = request.target_companies or []
+        search_must_have = request.must_have_keywords or []
+        search_nice_to_have = request.nice_to_have_keywords or []
+        search_remote_pref = request.remote_preference
+        search_salary_min = request.salary_min
+        search_generate_content = request.generate_content
+        search_auto_apply = request.auto_apply
+        
+        def run_pipeline():
+            """Run pipeline in background with new database session."""
             try:
-                result = orchestrator.run_full_pipeline(
-                    run_id=run.id,
-                    titles=request.search.titles,
-                    locations=request.search.locations or [],
-                    remote=request.search.remote,
-                    keywords=request.search.keywords,
-                    sources=request.search.sources,
-                    max_results=request.search.max_results,
-                    target_companies=request.target_companies or [],
-                    must_have_keywords=request.must_have_keywords or [],
-                    nice_to_have_keywords=request.nice_to_have_keywords or [],
-                    remote_preference=request.remote_preference,
-                    salary_min=request.salary_min,
-                    generate_content=request.generate_content,
-                    auto_apply=request.auto_apply,
-                )
-                logger.info(f"Pipeline run {run.id} completed: {result}")
+                # Use a new database session for background task
+                from app.db import get_db
+                db_gen = get_db()
+                db = next(db_gen)
+                try:
+                    # Create a new orchestrator with the new session
+                    bg_orchestrator = PipelineOrchestrator(db)
+                    
+                    result = bg_orchestrator.run_full_pipeline(
+                        run_id=run_id,
+                        titles=search_titles,
+                        locations=search_locations,
+                        remote=search_remote,
+                        keywords=search_keywords,
+                        sources=search_sources,
+                        max_results=search_max_results,
+                        target_companies=search_target_companies,
+                        must_have_keywords=search_must_have,
+                        nice_to_have_keywords=search_nice_to_have,
+                        remote_preference=search_remote_pref,
+                        salary_min=search_salary_min,
+                        generate_content=search_generate_content,
+                        auto_apply=search_auto_apply,
+                    )
+                    logger.info(f"Pipeline run {run_id} completed: {result}")
+                except Exception as pipeline_err:
+                    logger.error(f"Error in pipeline run {run_id}: {pipeline_err}", exc_info=True)
+                    # Update run status to failed
+                    try:
+                        from app.models import Run as RunModel, RunStatus
+                        bg_run = db.query(RunModel).filter(RunModel.id == run_id).first()
+                        if bg_run:
+                            bg_run.status = RunStatus.FAILED
+                            db.commit()
+                    except Exception as status_err:
+                        logger.error(f"Error updating run status: {status_err}", exc_info=True)
+                finally:
+                    db.close()
             except Exception as e:
-                logger.error(f"Error in pipeline run {run.id}: {e}", exc_info=True)
-                run.status = RunStatus.FAILED
-                db.commit()
+                logger.error(f"Fatal error in background pipeline task for run {run_id}: {e}", exc_info=True)
         
         background_tasks.add_task(run_pipeline)
         active_runs[run.id] = {"status": "started", "run": run}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
 
@@ -9,10 +9,23 @@ interface SearchFormProps {
   compact?: boolean;
 }
 
+interface RunStatus {
+  run_id: number;
+  status: string;
+  jobs_found: number;
+  jobs_scored: number;
+  jobs_above_threshold: number;
+  started_at: string;
+  completed_at?: string;
+}
+
 export default function SearchForm({ onSuccess, compact = false }: SearchFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
+  const [polling, setPolling] = useState(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   const [formData, setFormData] = useState({
     titles: ['Product Manager'],
@@ -23,10 +36,62 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
     generate_content: true,
   });
 
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  const pollRunStatus = async (runId: number) => {
+    try {
+      const response = await axios.get(`/api/runs/${runId}`);
+      const status: RunStatus = response.data;
+      setRunStatus(status);
+
+      // Check if run is complete or failed
+      if (status.status === 'completed' || status.status === 'failed') {
+        setPolling(false);
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        
+        // Wait a moment then redirect or call onSuccess
+        setTimeout(() => {
+          if (onSuccess) {
+            onSuccess(runId);
+          } else {
+            router.push(`/runs/${runId}`);
+          }
+        }, 1000);
+      }
+    } catch (err: any) {
+      console.error('Error polling run status:', err);
+      // If it's a 404, the run might have been deleted - stop polling
+      if (err.response?.status === 404) {
+        setError('Run not found. It may have been deleted.');
+        setPolling(false);
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+      }
+      // For other errors, continue polling (might be temporary network issue)
+      // But set error state
+      if (err.response?.status >= 500) {
+        setError(`Error checking run status: ${err.response?.data?.detail || err.message}`);
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setRunStatus(null);
 
     try {
       const response = await axios.post('/api/runs', {
@@ -40,15 +105,31 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
         generate_content: formData.generate_content,
       });
 
-      if (onSuccess) {
-        onSuccess(response.data.run_id);
-      } else {
-        router.push(`/runs/${response.data.run_id}`);
+      const runId = response.data.run_id;
+      setRunStatus(response.data);
+      setLoading(false);
+      setPolling(true);
+
+      // Start polling for status updates every 2 seconds
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
       }
+      pollingIntervalRef.current = setInterval(() => {
+        pollRunStatus(runId);
+      }, 2000);
+
+      // Poll immediately
+      pollRunStatus(runId);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to start search');
+      const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to start search';
+      setError(errorMessage);
       console.error('Error starting search:', err);
-    } finally {
+      console.error('Error details:', {
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        message: err.message,
+      });
       setLoading(false);
     }
   };
@@ -105,12 +186,30 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
             </div>
           </div>
           {error && <div className="text-red-600 text-sm">{error}</div>}
+          
+          {/* Progress Indicator for compact view */}
+          {(polling || runStatus) && runStatus && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md text-xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-medium">Run #{runStatus.run_id} - {runStatus.status}</span>
+                {(runStatus.status === 'completed' || runStatus.status === 'failed') && (
+                  <span className={runStatus.status === 'completed' ? 'text-green-600' : 'text-red-600'}>
+                    {runStatus.status === 'completed' ? '✓' : '✗'}
+                  </span>
+                )}
+              </div>
+              <div className="text-gray-600">
+                Jobs: {runStatus.jobs_found} found, {runStatus.jobs_scored} scored
+              </div>
+            </div>
+          )}
+          
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || polling}
             className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm"
           >
-            {loading ? 'Starting Search...' : 'Start Search'}
+            {loading ? 'Starting...' : polling ? 'In Progress...' : 'Start Search'}
           </button>
         </form>
       </div>
@@ -224,12 +323,82 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
           <div className="p-3 bg-red-100 text-red-800 rounded-md text-sm">{error}</div>
         )}
 
+        {/* Progress Indicator */}
+        {(polling || runStatus) && runStatus && (
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2">
+                <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${
+                  runStatus.status === 'completed' || runStatus.status === 'failed' 
+                    ? 'border-green-500' 
+                    : 'border-blue-500'
+                }`}></div>
+                <span className="text-sm font-medium text-gray-900">
+                  Run #{runStatus.run_id} - {runStatus.status.charAt(0).toUpperCase() + runStatus.status.slice(1)}
+                </span>
+              </div>
+              {runStatus.status === 'completed' && (
+                <span className="text-xs text-green-600 font-medium">✓ Complete</span>
+              )}
+              {runStatus.status === 'failed' && (
+                <span className="text-xs text-red-600 font-medium">✗ Failed</span>
+              )}
+            </div>
+            
+            <div className="space-y-2 text-sm text-gray-600">
+              <div className="flex justify-between">
+                <span>Jobs Found:</span>
+                <span className="font-medium">{runStatus.jobs_found}</span>
+              </div>
+              {runStatus.jobs_scored > 0 && (
+                <div className="flex justify-between">
+                  <span>Jobs Scored:</span>
+                  <span className="font-medium">{runStatus.jobs_scored}</span>
+                </div>
+              )}
+              {runStatus.jobs_above_threshold > 0 && (
+                <div className="flex justify-between">
+                  <span>Above Threshold:</span>
+                  <span className="font-medium text-green-600">{runStatus.jobs_above_threshold}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            {runStatus.status !== 'completed' && runStatus.status !== 'failed' && (
+              <div className="mt-3">
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ 
+                      width: `${Math.min(
+                        ((runStatus.jobs_found > 0 ? 1 : 0) * 33 + 
+                         (runStatus.jobs_scored > 0 ? 1 : 0) * 33 + 
+                         (runStatus.status === 'completed' ? 1 : 0) * 34) * 100,
+                        100
+                      )}%` 
+                    }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {runStatus.status === 'pending' && 'Initializing...'}
+                  {runStatus.status === 'searching' && 'Searching job boards...'}
+                  {runStatus.status === 'scoring' && 'Scoring and filtering jobs...'}
+                  {runStatus.status === 'content_generation' && 'Generating content...'}
+                  {runStatus.status === 'completed' && 'Search complete!'}
+                  {runStatus.status === 'failed' && 'Search failed. Check logs for details.'}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         <button
           type="submit"
-          disabled={loading || formData.titles.length === 0}
+          disabled={loading || polling || formData.titles.length === 0}
           className="w-full px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 font-medium"
         >
-          {loading ? 'Starting Search...' : 'Start Search'}
+          {loading ? 'Starting Search...' : polling ? 'Search in Progress...' : 'Start Search'}
         </button>
       </form>
     </div>
