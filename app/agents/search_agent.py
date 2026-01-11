@@ -1,13 +1,16 @@
 """Agent for searching job boards."""
 
 import logging
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from sqlalchemy.orm import Session
+import concurrent.futures
+from functools import partial
 
 from app.jobsources import LinkedInAdapter, IndeedAdapter, WellfoundAdapter, MonsterAdapter
 from app.jobsources.base import JobListing
 from app.config import config
 from app.agents.log_agent import LogAgent
+from app.agents.query_enhancer import QueryEnhancer, enhance_search_queries
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,16 @@ class SearchAgent:
         self.db = db
         self.log_agent = log_agent
         self.agent_name = "SearchAgent"
+        
+        # Initialize query enhancer
+        search_config = config.get_search_config()
+        min_query_length = search_config.get("min_query_length", 5)
+        self.query_enhancer = QueryEnhancer(min_query_length=min_query_length)
+        
+        # Get search configuration
+        self.enable_parallel = search_config.get("enable_parallel_search", True)
+        self.search_timeout = search_config.get("search_timeout_seconds", 90)
+        self.max_total_results = search_config.get("max_total_results", 500)
         
         # Initialize job source adapters
         self.sources = {}
@@ -109,6 +122,29 @@ class SearchAgent:
         if not titles:
             raise ValueError("At least one job title must be provided")
         
+        # Validate and enhance titles
+        enhanced_titles = []
+        for title in titles:
+            is_valid, error = self.query_enhancer.validate_query(title)
+            if not is_valid:
+                logger.warning(f"Invalid title '{title}': {error}. Skipping.")
+                if self.log_agent and run_id:
+                    self.log_agent.log(
+                        agent_name=self.agent_name,
+                        status="warning",
+                        message=f"Invalid title '{title}': {error}",
+                        run_id=run_id,
+                        step="validate_query",
+                    )
+                continue
+            enhanced_title = self.query_enhancer.enhance_query(title, keywords)
+            enhanced_titles.append(enhanced_title)
+            if enhanced_title != title:
+                logger.info(f"Enhanced query '{title}' -> '{enhanced_title}'")
+        
+        if not enhanced_titles:
+            raise ValueError(f"All titles were invalid. Please provide valid job titles (minimum {self.query_enhancer.min_query_length} characters, not generic terms).")
+        
         # Determine which sources to search
         # Default sources: linkedin, indeed, monster, wellfound (if enabled)
         if sources:
@@ -123,7 +159,8 @@ class SearchAgent:
             self.log_agent.log_search_start(
                 run_id=run_id,
                 search_params={
-                    "titles": titles,
+                    "titles": enhanced_titles,
+                    "original_titles": titles,
                     "locations": locations,
                     "remote": remote,
                     "keywords": keywords,
@@ -131,7 +168,8 @@ class SearchAgent:
                 }
             )
         
-        # Search each source
+        # Build search tasks
+        search_tasks = []
         for source_name in sources_to_search:
             if source_name not in self.sources:
                 logger.warning(f"Source '{source_name}' not available, skipping")
@@ -139,52 +177,45 @@ class SearchAgent:
             
             source = self.sources[source_name]
             
-            try:
-                # Search each title
-                for title in titles:
-                    # Determine location string
-                    location_str = None
-                    if locations:
-                        # Use first location for now (could be enhanced to search all)
-                        location_str = locations[0]
-                    
-                    # Build query (include keywords if provided)
-                    query = title
-                    if keywords:
-                        query = f"{title} {' '.join(keywords[:3])}"  # Add top 3 keywords
-                    
-                    logger.info(f"=== SEARCHING {source_name.upper()} ===")
-                    logger.info(f"Query: '{query}'")
-                    logger.info(f"Location: {location_str}")
-                    logger.info(f"Remote: {remote}")
-                    logger.info(f"Max results per source: {max_results_per_source}")
-                    
-                    jobs = source.search(
-                        query=query,
-                        location=location_str,
-                        remote=remote,
-                        max_results=max_results_per_source,
-                    )
-                    
-                    logger.info(f"=== {source_name.upper()} SEARCH RESULT ===")
-                    logger.info(f"Jobs returned: {len(jobs)}")
-                    if jobs:
-                        logger.info(f"Sample jobs: {[f'{j.title} @ {j.company}' for j in jobs[:3]]}")
-                    
-                    all_jobs.extend(jobs)
-                    sources_searched.append(source_name)
-                    
-                    logger.info(f"✓ {source_name}: Found {len(jobs)} jobs for '{title}'")
-            
-            except Exception as e:
-                logger.error(f"Error searching {source_name}: {e}", exc_info=True)
-                if self.log_agent and run_id:
-                    self.log_agent.log_error(
-                        agent_name=self.agent_name,
-                        error=e,
-                        run_id=run_id,
-                        step=f"search_{source_name}",
-                    )
+            # Search each enhanced title
+            for title in enhanced_titles:
+                # Determine location string
+                location_str = None
+                if locations:
+                    # Use first location for now (could be enhanced to search all)
+                    location_str = locations[0]
+                
+                # Build optimized query
+                query = self.query_enhancer.build_search_query(
+                    title=title,
+                    keywords=keywords,
+                    locations=locations,
+                    remote=remote,
+                )
+                
+                # Create search task
+                search_tasks.append({
+                    'source_name': source_name,
+                    'source': source,
+                    'query': query,
+                    'location': location_str,
+                    'remote': remote,
+                    'max_results': max_results_per_source,
+                    'title': title,
+                })
+        
+        # Execute searches (parallel or sequential)
+        if self.enable_parallel and len(search_tasks) > 1:
+            logger.info(f"Searching {len(search_tasks)} queries in parallel across {len(sources_to_search)} sources...")
+            all_jobs, sources_searched = self._search_parallel(search_tasks, run_id)
+        else:
+            logger.info(f"Searching {len(search_tasks)} queries sequentially...")
+            all_jobs, sources_searched = self._search_sequential(search_tasks, run_id)
+        
+        # Apply max_total_results limit if configured
+        if self.max_total_results and len(all_jobs) > self.max_total_results:
+            logger.info(f"Limiting results from {len(all_jobs)} to {self.max_total_results} (max_total_results)")
+            all_jobs = all_jobs[:self.max_total_results]
         
         # Deduplicate jobs by source_url
         seen_urls = set()
@@ -210,3 +241,112 @@ class SearchAgent:
             )
         
         return unique_jobs
+    
+    def _search_sequential(self, search_tasks: List[Dict], run_id: Optional[int]) -> Tuple[List[JobListing], List[str]]:
+        """Execute searches sequentially."""
+        all_jobs = []
+        sources_searched = []
+        
+        for task in search_tasks:
+            source_name = task['source_name']
+            source = task['source']
+            query = task['query']
+            location_str = task['location']
+            remote = task['remote']
+            max_results = task['max_results']
+            title = task['title']
+            
+            try:
+                logger.info(f"=== SEARCHING {source_name.upper()} ===")
+                logger.info(f"Query: '{query}' (from title: '{title}')")
+                logger.info(f"Location: {location_str}")
+                logger.info(f"Remote: {remote}")
+                logger.info(f"Max results: {max_results}")
+                
+                jobs = source.search(
+                    query=query,
+                    location=location_str,
+                    remote=remote,
+                    max_results=max_results,
+                )
+                
+                logger.info(f"=== {source_name.upper()} SEARCH RESULT ===")
+                logger.info(f"Jobs returned: {len(jobs)}")
+                if jobs:
+                    logger.info(f"Sample jobs: {[f'{j.title} @ {j.company}' for j in jobs[:3]]}")
+                
+                all_jobs.extend(jobs)
+                if source_name not in sources_searched:
+                    sources_searched.append(source_name)
+                
+                logger.info(f"✓ {source_name}: Found {len(jobs)} jobs for '{title}'")
+            
+            except Exception as e:
+                logger.error(f"Error searching {source_name} with query '{query}': {e}", exc_info=True)
+                if self.log_agent and run_id:
+                    self.log_agent.log_error(
+                        agent_name=self.agent_name,
+                        error=e,
+                        run_id=run_id,
+                        step=f"search_{source_name}",
+                    )
+        
+        return all_jobs, sources_searched
+    
+    def _search_parallel(self, search_tasks: List[Dict], run_id: Optional[int]) -> Tuple[List[JobListing], List[str]]:
+        """Execute searches in parallel using ThreadPoolExecutor."""
+        all_jobs = []
+        sources_searched = []
+        max_workers = min(len(search_tasks), 4)  # Limit concurrent searches to avoid overwhelming sources
+        
+        def execute_search(task: Dict) -> tuple[List[JobListing], str]:
+            """Execute a single search task."""
+            source_name = task['source_name']
+            source = task['source']
+            query = task['query']
+            location_str = task['location']
+            remote = task['remote']
+            max_results = task['max_results']
+            title = task['title']
+            
+            try:
+                logger.info(f"=== SEARCHING {source_name.upper()} (parallel) ===")
+                logger.info(f"Query: '{query}' (from title: '{title}')")
+                
+                jobs = source.search(
+                    query=query,
+                    location=location_str,
+                    remote=remote,
+                    max_results=max_results,
+                )
+                
+                logger.info(f"✓ {source_name}: Found {len(jobs)} jobs for '{title}'")
+                return jobs, source_name
+            except Exception as e:
+                logger.error(f"Error searching {source_name} with query '{query}': {e}", exc_info=True)
+                if self.log_agent and run_id:
+                    self.log_agent.log_error(
+                        agent_name=self.agent_name,
+                        error=e,
+                        run_id=run_id,
+                        step=f"search_{source_name}",
+                    )
+                return [], source_name
+        
+        # Execute searches in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_task = {executor.submit(execute_search, task): task for task in search_tasks}
+            
+            for future in concurrent.futures.as_completed(future_to_task, timeout=self.search_timeout * len(search_tasks)):
+                task = future_to_task[future]
+                try:
+                    jobs, source_name = future.result(timeout=self.search_timeout)
+                    all_jobs.extend(jobs)
+                    if source_name not in sources_searched:
+                        sources_searched.append(source_name)
+                except concurrent.futures.TimeoutError:
+                    logger.error(f"Search task timed out: {task['source_name']} - {task['query']}")
+                except Exception as e:
+                    logger.error(f"Search task failed: {task['source_name']} - {task['query']}: {e}", exc_info=True)
+        
+        return all_jobs, sources_searched

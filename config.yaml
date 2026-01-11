@@ -9,7 +9,11 @@ search:
   - Charlotte, NC
   default_remote_preference: remote
   default_salary_min: 115000
-  default_max_results_per_source: 50
+  default_max_results_per_source: 150  # Increased from 100 for more results
+  search_timeout_seconds: 90  # Increased timeout per source for more thorough searches
+  enable_parallel_search: true  # Search multiple sources in parallel
+  min_query_length: 5  # Increased from 3 - reject very short/generic queries
+  max_total_results: 500  # Maximum total results across all sources
 scoring:
   title_match_weight: 8
   vertical_match_weight: 6
@@ -28,9 +32,9 @@ verticals:
 - machine learning
 - ai
 thresholds:
-  min_relevance_score: 0.1
-  high_relevance_score: 8
-  auto_approval_threshold: 8
+  min_relevance_score: 4.5  # Balanced threshold - filters low-quality but keeps good matches
+  high_relevance_score: 7.5  # High-quality jobs (auto-approve candidate)
+  auto_approval_threshold: 8.0  # Auto-approve threshold
 llm:
   provider: ollama  # Switched to Ollama to avoid OpenAI quota/rate limit issues
   model: llama3.2  # Default Ollama model - change to your preferred model (llama3.1, mistral, etc.)
@@ -43,8 +47,9 @@ llm:
 job_sources:
   linkedin:
     enabled: true
-    max_results: 50
-    rate_limit_delay: 3
+    max_results: 150  # Increased from 100 for more results
+    rate_limit_delay: 2  # Reduced from 3 for faster searches (be careful with rate limits)
+    timeout_seconds: 90  # Increased timeout for more thorough searches
     use_playwright: true
     use_apify: false
     use_mantiks: false
@@ -54,8 +59,9 @@ job_sources:
     linkedin_password: Rutger$11
   indeed:
     enabled: true
-    max_results: 50
-    rate_limit_delay: 3
+    max_results: 150  # Increased from 100 for more results
+    rate_limit_delay: 2  # Reduced for faster searches
+    timeout_seconds: 75  # Increased timeout for more thorough searches
     use_playwright: false
     use_scrapeops: true
     use_hasdata: false
@@ -63,14 +69,16 @@ job_sources:
     retry_delay: 2
   wellfound:
     enabled: false  # Disabled: 403 Forbidden - site blocking automated requests
-    max_results: 50
+    max_results: 100
     rate_limit_delay: 3
+    timeout_seconds: 45
     max_retries: 3
     retry_delay: 1
   monster:
     enabled: true
-    max_results: 50
-    rate_limit_delay: 3
+    max_results: 150  # Increased from 100 for more results
+    rate_limit_delay: 2  # Reduced for faster searches
+    timeout_seconds: 75  # Increased timeout for more thorough searches
     use_playwright: false
     use_scrapeops: true
     use_ohio_means_jobs: true
