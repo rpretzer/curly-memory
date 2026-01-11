@@ -200,14 +200,20 @@ async def create_run(
         
         def run_pipeline():
             """Run pipeline in background with new database session."""
+            logger.info(f"Background task starting for run {run_id}")
             try:
                 # Use a new database session for background task
                 from app.db import get_db
+                from app.models import Run as RunModel, RunStatus
+                
                 db_gen = get_db()
                 db = next(db_gen)
                 try:
+                    logger.info(f"Background task: Database session created for run {run_id}")
+                    
                     # Create a new orchestrator with the new session
                     bg_orchestrator = PipelineOrchestrator(db)
+                    logger.info(f"Background task: Orchestrator created for run {run_id}")
                     
                     result = bg_orchestrator.run_full_pipeline(
                         run_id=run_id,
@@ -230,17 +236,36 @@ async def create_run(
                     logger.error(f"Error in pipeline run {run_id}: {pipeline_err}", exc_info=True)
                     # Update run status to failed
                     try:
-                        from app.models import Run as RunModel, RunStatus
                         bg_run = db.query(RunModel).filter(RunModel.id == run_id).first()
                         if bg_run:
                             bg_run.status = RunStatus.FAILED
+                            bg_run.error_message = str(pipeline_err)
+                            bg_run.completed_at = datetime.utcnow()
                             db.commit()
+                            logger.info(f"Run {run_id} marked as failed")
                     except Exception as status_err:
                         logger.error(f"Error updating run status: {status_err}", exc_info=True)
                 finally:
                     db.close()
             except Exception as e:
                 logger.error(f"Fatal error in background pipeline task for run {run_id}: {e}", exc_info=True)
+                # Try to update status even if database session failed
+                try:
+                    from app.db import get_db
+                    from app.models import Run as RunModel, RunStatus
+                    db_gen = get_db()
+                    db = next(db_gen)
+                    try:
+                        bg_run = db.query(RunModel).filter(RunModel.id == run_id).first()
+                        if bg_run:
+                            bg_run.status = RunStatus.FAILED
+                            bg_run.error_message = f"Fatal error: {str(e)}"
+                            bg_run.completed_at = datetime.utcnow()
+                            db.commit()
+                    finally:
+                        db.close()
+                except Exception:
+                    pass  # Can't do anything if we can't update the database
         
         background_tasks.add_task(run_pipeline)
         active_runs[run.id] = {"status": "started", "run": run}

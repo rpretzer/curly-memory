@@ -167,39 +167,129 @@ class FilterAndScoreAgent:
         return normalized_score, breakdown, reasoning
     
     def _score_title_match(self, job_title: str, target_titles: List[str]) -> float:
-        """Score title match (0-10)."""
+        """
+        Score title match using fuzzy and semantic matching (0-10).
+        Improved to handle variations, abbreviations, and synonyms.
+        """
         job_title_lower = job_title.lower()
+        job_words = set(job_title_lower.split())
+        
+        best_score = 0.0
         
         for target in target_titles:
             target_lower = target.lower()
-            # Exact match
+            target_words = set(target_lower.split())
+            
+            # 1. Exact match (substring in either direction)
             if target_lower in job_title_lower or job_title_lower in target_lower:
                 return 10.0
-            # Partial match (keywords)
-            target_words = set(target_lower.split())
-            job_words = set(job_title_lower.split())
+            
+            # 2. Word-level exact match
+            if target_words == job_words:
+                return 10.0
+            
+            # 3. Significant word overlap (>70% of target words)
             common_words = target_words.intersection(job_words)
-            if len(common_words) >= 2:
-                return 8.0
+            if len(target_words) > 0:
+                overlap_ratio = len(common_words) / len(target_words)
+                if overlap_ratio >= 0.7:
+                    return 9.0
+                elif overlap_ratio >= 0.5:
+                    best_score = max(best_score, 8.0)
+                elif overlap_ratio >= 0.3:
+                    best_score = max(best_score, 6.0)
+            
+            # 4. Number of matching words (for multi-word titles)
+            if len(common_words) >= 3:
+                best_score = max(best_score, 8.0)
+            elif len(common_words) >= 2:
+                best_score = max(best_score, 6.0)
             elif len(common_words) == 1:
-                return 5.0
+                # Single word match - check if it's a meaningful word
+                common_word = list(common_words)[0]
+                # Skip generic words
+                generic_words = {'the', 'a', 'an', 'and', 'or', 'for', 'in', 'on', 'at', 'to', 'of', 'with', 'by', 'remote', 'full', 'time', 'part'}
+                if common_word not in generic_words and len(common_word) > 2:
+                    best_score = max(best_score, 4.0)
+            
+            # 5. Fuzzy matching for common variations
+            # Normalize common variations
+            normalized_target = target_lower.replace('-', ' ').replace('_', ' ')
+            normalized_job = job_title_lower.replace('-', ' ').replace('_', ' ')
+            
+            # Check if normalized versions match better
+            normalized_target_words = set(normalized_target.split())
+            normalized_job_words = set(normalized_job.split())
+            normalized_common = normalized_target_words.intersection(normalized_job_words)
+            
+            if len(normalized_target_words) > 0:
+                normalized_overlap = len(normalized_common) / len(normalized_target_words)
+                if normalized_overlap > overlap_ratio:
+                    if normalized_overlap >= 0.7:
+                        best_score = max(best_score, 8.5)
+                    elif normalized_overlap >= 0.5:
+                        best_score = max(best_score, 7.0)
+                    elif normalized_overlap >= 0.3:
+                        best_score = max(best_score, 5.0)
+            
+            # 6. Check for key role terms (common job title components)
+            key_terms = {
+                'manager', 'engineer', 'developer', 'analyst', 'specialist', 
+                'director', 'lead', 'senior', 'principal', 'architect',
+                'consultant', 'coordinator', 'administrator', 'executive'
+            }
+            target_key_terms = target_words.intersection(key_terms)
+            job_key_terms = job_words.intersection(key_terms)
+            
+            if target_key_terms and job_key_terms:
+                # If both have key terms and some match
+                if target_key_terms == job_key_terms:
+                    best_score = max(best_score, 7.0)
+                elif target_key_terms.intersection(job_key_terms):
+                    best_score = max(best_score, 5.0)
         
-        return 0.0
+        return best_score
     
     def _score_vertical_match(self, description: str) -> float:
-        """Score vertical match based on target verticals (0-10)."""
+        """
+        Score vertical match based on target verticals (0-10).
+        Improved to handle variations and multi-word verticals.
+        """
         if not description or not self.target_verticals:
             return 0.0
         
         desc_lower = description.lower()
-        matches = sum(1 for vertical in self.target_verticals if vertical.lower() in desc_lower)
+        desc_words = set(desc_lower.split())
         
+        # Check for vertical matches (including variations)
+        matches = 0
+        for vertical in self.target_verticals:
+            vertical_lower = vertical.lower()
+            vertical_words = set(vertical_lower.split())
+            
+            # Exact match (e.g., "fintech" in description)
+            if vertical_lower in desc_lower:
+                matches += 1
+            # Word-level match (e.g., "financial services" matches "financial" and "services")
+            elif vertical_words.intersection(desc_words):
+                # Check if all words in vertical are present (stronger match)
+                if vertical_words.issubset(desc_words):
+                    matches += 1
+                # Partial match (some words present)
+                elif len(vertical_words.intersection(desc_words)) >= len(vertical_words) / 2:
+                    matches += 0.5
+        
+        # Score based on number and strength of matches
         if matches >= 3:
             return 10.0
-        elif matches == 2:
-            return 7.0
-        elif matches == 1:
-            return 4.0
+        elif matches >= 2:
+            return 8.0  # Increased from 7.0
+        elif matches >= 1.5:
+            return 6.0
+        elif matches >= 1:
+            return 5.0  # Increased from 4.0
+        elif matches >= 0.5:
+            return 3.0
         else:
             return 0.0
     
@@ -259,26 +349,79 @@ class FilterAndScoreAgent:
         must_have: List[str],
         nice_to_have: List[str]
     ) -> float:
-        """Score keyword overlap (0-10)."""
+        """
+        Score keyword overlap (0-10).
+        Improved to use extracted job keywords and fuzzy matching.
+        """
+        if not description:
+            description = ""
+        
         desc_lower = description.lower()
-        all_keywords = set(job_keywords) | {w.lower() for w in desc_lower.split()}
+        # Combine job keywords and words from description
+        job_keywords_lower = [kw.lower() for kw in (job_keywords or [])]
+        desc_words = set(desc_lower.split())
         
-        must_have_matches = sum(1 for kw in must_have if kw.lower() in desc_lower)
-        nice_have_matches = sum(1 for kw in nice_to_have if kw.lower() in desc_lower)
+        # Create a comprehensive keyword set
+        all_job_keywords = set(job_keywords_lower) | desc_words
         
-        # Must-have keywords are critical
+        # Check must-have keywords (strict matching)
+        must_have_matches = 0
+        must_have_normalized = [kw.lower().strip() for kw in (must_have or [])]
+        
+        for must_kw in must_have_normalized:
+            # Exact match in description or job keywords
+            if must_kw in desc_lower or must_kw in all_job_keywords:
+                must_have_matches += 1
+            else:
+                # Fuzzy match - check if must keyword is contained in any job keyword/word
+                for job_kw in all_job_keywords:
+                    if must_kw in job_kw or job_kw in must_kw:
+                        must_have_matches += 1
+                        break
+        
+        # Check nice-to-have keywords (fuzzy matching allowed)
+        nice_have_matches = 0
+        nice_to_have_normalized = [kw.lower().strip() for kw in (nice_to_have or [])]
+        
+        for nice_kw in nice_to_have_normalized:
+            # Exact match
+            if nice_kw in desc_lower or nice_kw in all_job_keywords:
+                nice_have_matches += 1
+            else:
+                # Fuzzy match - check partial matches
+                for job_kw in all_job_keywords:
+                    if nice_kw in job_kw or job_kw in nice_kw:
+                        nice_have_matches += 1
+                        break
+                    # Also check if words overlap (e.g., "data" matches "data science")
+                    if len(nice_kw) > 3 and len(job_kw) > 3:
+                        if nice_kw[:4] in job_kw or job_kw[:4] in nice_kw:
+                            nice_have_matches += 0.5  # Partial credit
+                            break
+        
+        # Must-have keywords are critical - penalize heavily if missing
         if must_have:
-            must_score = (must_have_matches / len(must_have)) * 7.0
+            must_ratio = must_have_matches / len(must_have)
+            # Penalize if must-have keywords are missing
+            if must_ratio == 0.0:
+                must_score = 0.0  # No matches at all
+            elif must_ratio < 0.5:
+                must_score = must_ratio * 4.0  # Partial match penalty
+            else:
+                must_score = 5.0 + (must_ratio - 0.5) * 4.0  # 5.0-9.0 for 50-100% matches
         else:
             must_score = 0.0
         
         # Nice-to-have keywords add bonus
         if nice_to_have:
-            nice_score = (nice_have_matches / len(nice_to_have)) * 3.0
+            nice_ratio = nice_have_matches / len(nice_to_have)
+            nice_score = nice_ratio * 3.0  # Up to 3.0 points
         else:
             nice_score = 0.0
         
-        return min(10.0, must_score + nice_score)
+        total_score = min(10.0, must_score + nice_score)
+        
+        return total_score
     
     def _score_company_match(self, company: str, target_companies: List[str]) -> float:
         """Score company match (0-10)."""

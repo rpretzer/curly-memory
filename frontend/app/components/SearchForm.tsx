@@ -173,17 +173,26 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900"
               />
             </div>
-            <div className="flex items-end">
-              <label className="flex items-center space-x-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={formData.remote}
-                  onChange={(e) => setFormData({ ...formData, remote: e.target.checked })}
-                  className="rounded"
-                />
-                <span>Remote</span>
-              </label>
-            </div>
+          </div>
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center space-x-2 text-sm">
+              <input
+                type="checkbox"
+                checked={formData.remote}
+                onChange={(e) => setFormData({ ...formData, remote: e.target.checked })}
+                className="rounded"
+              />
+              <span>Remote only</span>
+            </label>
+            <label className="flex items-center space-x-2 text-sm">
+              <input
+                type="checkbox"
+                checked={formData.generate_content}
+                onChange={(e) => setFormData({ ...formData, generate_content: e.target.checked })}
+                className="rounded"
+              />
+              <span>Generate content</span>
+            </label>
           </div>
           {error && <div className="text-red-600 text-sm">{error}</div>}
           

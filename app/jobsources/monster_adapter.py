@@ -414,3 +414,4 @@ class MonsterAdapter(BaseJobSource):
             logger.warning(f"Error parsing Monster job card: {e}")
             return None
 
+

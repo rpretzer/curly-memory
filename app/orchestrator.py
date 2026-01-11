@@ -111,7 +111,7 @@ class PipelineOrchestrator:
         remote: bool = False,
         keywords: Optional[List[str]] = None,
         sources: Optional[List[str]] = None,
-        max_results: int = 50,
+        max_results: Optional[int] = None,
     ) -> List[int]:
         """
         Run only the search phase.
@@ -123,7 +123,7 @@ class PipelineOrchestrator:
             remote: Remote filter
             keywords: Optional keywords
             sources: Optional source filters
-            max_results: Max results per source
+            max_results: Max results per source (defaults to config value)
             
         Returns:
             List of job IDs found
@@ -131,6 +131,11 @@ class PipelineOrchestrator:
         run = self.db.query(Run).filter(Run.id == run_id).first()
         if not run:
             raise ValueError(f"Run {run_id} not found")
+        
+        # Get max_results from config if not provided
+        if max_results is None:
+            search_config = config.get_search_config()
+            max_results = search_config.get("default_max_results_per_source", 100)
         
         run.status = RunStatus.SEARCHING
         self.db.commit()
@@ -259,7 +264,7 @@ class PipelineOrchestrator:
         remote: bool = False,
         keywords: Optional[List[str]] = None,
         sources: Optional[List[str]] = None,
-        max_results: int = 50,
+        max_results: Optional[int] = None,
         target_companies: Optional[List[str]] = None,
         must_have_keywords: Optional[List[str]] = None,
         nice_to_have_keywords: Optional[List[str]] = None,
@@ -283,6 +288,22 @@ class PipelineOrchestrator:
             max_results=max_results,
         )
         
+        # Get max_results from config if not provided
+        if max_results is None:
+            search_config = config.get_search_config()
+            max_results = search_config.get("default_max_results_per_source", 100)
+        
+        # Run search
+        job_ids = self.run_search_only(
+            run_id=run_id,
+            titles=titles,
+            locations=locations,
+            remote=remote,
+            keywords=keywords,
+            sources=sources,
+            max_results=max_results,
+        )
+        
         run = self.db.query(Run).filter(Run.id == run_id).first()
         run.status = RunStatus.SCORING
         self.db.commit()
@@ -291,6 +312,8 @@ class PipelineOrchestrator:
             # Get job listings from database
             from app.models import Job
             jobs = self.db.query(Job).filter(Job.id.in_(job_ids)).all()
+            
+            logger.info(f"=== ORCHESTRATOR: SCORING {len(jobs)} JOBS ===")
             
             # Convert to JobListing objects for scoring
             from app.jobsources.base import JobListing
@@ -325,6 +348,10 @@ class PipelineOrchestrator:
                 run_id=run_id,
             )
             
+            logger.info(f"=== ORCHESTRATOR: SCORING COMPLETE ===")
+            logger.info(f"Jobs found: {len(job_listings)}")
+            logger.info(f"Jobs above threshold: {len(scored_jobs)}")
+            
             run.jobs_scored = len(scored_jobs)
             run.jobs_above_threshold = len(scored_jobs)
             run.status = RunStatus.COMPLETED
@@ -356,7 +383,7 @@ class PipelineOrchestrator:
         remote: bool = False,
         keywords: Optional[List[str]] = None,
         sources: Optional[List[str]] = None,
-        max_results: int = 50,
+        max_results: Optional[int] = None,
         target_companies: Optional[List[str]] = None,
         must_have_keywords: Optional[List[str]] = None,
         nice_to_have_keywords: Optional[List[str]] = None,

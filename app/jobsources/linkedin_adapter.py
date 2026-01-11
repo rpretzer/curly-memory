@@ -31,7 +31,8 @@ class LinkedInAdapter(BaseJobSource):
         """
         super().__init__(config)
         self.api_key = api_key
-        self.rate_limit_delay = config.get("rate_limit_delay", 4.0) if config else 4.0
+        self.rate_limit_delay = config.get("rate_limit_delay", 2.0) if config else 2.0
+        self.timeout = config.get("timeout_seconds", 60) if config else 60
         self.base_url = "https://www.linkedin.com"
         self.use_playwright = config.get("use_playwright", False) if config else False  # Disabled by default
         self._playwright = None
@@ -438,18 +439,20 @@ class LinkedInAdapter(BaseJobSource):
             url = f"{search_url}?{param_str}"
             
             logger.info(f"Navigating to LinkedIn: {url}")
-            page.goto(url, wait_until='networkidle', timeout=30000)
+            page.goto(url, wait_until='networkidle', timeout=self.timeout * 1000)
             time.sleep(3)  # Wait for dynamic content (longer if logged in)
             
             jobs = []
             scroll_attempts = 0
             seen_urls = set()  # Track URLs to avoid duplicates
-            # Increase max scrolls to fetch more results
-            max_scrolls = max(10, max_results // 3)  # More aggressive scrolling for better results
+            consecutive_no_new = 0  # Track consecutive rounds with no new jobs
+            # Increase max scrolls significantly to fetch more results
+            max_scrolls = max(30, max_results // 2)  # More aggressive scrolling - aim for 2x results to get max_results unique
+            max_consecutive_empty = 5  # Stop after 5 consecutive rounds with no new jobs
             
             logger.info(f"Starting job collection (target: {max_results} jobs, max scrolls: {max_scrolls})")
             
-            while len(jobs) < max_results and scroll_attempts < max_scrolls:
+            while len(jobs) < max_results and scroll_attempts < max_scrolls and consecutive_no_new < max_consecutive_empty:
                 logger.debug(f"Scroll attempt {scroll_attempts + 1}/{max_scrolls}, currently have {len(jobs)} jobs")
                 
                 # Find job cards with multiple selector attempts
@@ -459,6 +462,8 @@ class LinkedInAdapter(BaseJobSource):
                     'div.job-card-container',
                     'li.jobs-search-results__list-item',
                     'div[data-entity-urn*="jobPosting"]',
+                    'ul.jobs-search__results-list li',
+                    'div.job-result-card',
                 ]
                 
                 for selector in selectors:
@@ -472,12 +477,15 @@ class LinkedInAdapter(BaseJobSource):
                     logger.warning(f"No job cards found on scroll attempt {scroll_attempts + 1}")
                     # Try scrolling anyway to load more content
                     page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                    time.sleep(3)
+                    time.sleep(2)  # Reduced wait time
                     scroll_attempts += 1
+                    consecutive_no_new += 1
                     continue
                 
                 # Parse each job card
                 parsed_this_round = 0
+                jobs_before_round = len(jobs)
+                
                 for card in job_cards:
                     if len(jobs) >= max_results:
                         break
@@ -496,10 +504,16 @@ class LinkedInAdapter(BaseJobSource):
                         logger.debug(f"Error parsing LinkedIn job card: {e}")
                         continue
                 
-                logger.info(f"Parsed {parsed_this_round} new jobs this round (total: {len(jobs)}/{max_results})")
+                # Check if we got new jobs this round
+                if parsed_this_round > 0:
+                    consecutive_no_new = 0
+                else:
+                    consecutive_no_new += 1
+                
+                logger.info(f"Parsed {parsed_this_round} new jobs this round (total: {len(jobs)}/{max_results}, consecutive empty: {consecutive_no_new})")
                 
                 # Scroll to load more jobs
-                if len(jobs) < max_results:
+                if len(jobs) < max_results and consecutive_no_new < max_consecutive_empty:
                     # Scroll smoothly to trigger lazy loading
                     page.evaluate('''
                         window.scrollTo({
@@ -507,19 +521,38 @@ class LinkedInAdapter(BaseJobSource):
                             behavior: 'smooth'
                         });
                     ''')
-                    time.sleep(3)  # Wait for content to load
+                    time.sleep(2)  # Reduced wait time for faster collection
                     
                     # Also try clicking "Show more" button if it exists
                     try:
-                        show_more = page.query_selector('button.infinite-scroller__show-more-button, button[aria-label*="Show more"]')
-                        if show_more:
-                            show_more.click()
-                            time.sleep(2)
+                        show_more_selectors = [
+                            'button.infinite-scroller__show-more-button',
+                            'button[aria-label*="Show more"]',
+                            'button[aria-label*="Load more"]',
+                            'button.jobs-search-results__pagination-next-button',
+                        ]
+                        for selector in show_more_selectors:
+                            show_more = page.query_selector(selector)
+                            if show_more and show_more.is_visible():
+                                show_more.click()
+                                time.sleep(2)
+                                break
+                    except Exception as e:
+                        logger.debug(f"Could not click show more button: {e}")
+                    
+                    # Also try pagination if available
+                    try:
+                        next_button = page.query_selector('button[aria-label="Next"], a[aria-label="Next"]')
+                        if next_button and next_button.is_visible():
+                            next_button.click()
+                            time.sleep(3)
                     except:
                         pass
                     
                     scroll_attempts += 1
                 else:
+                    if consecutive_no_new >= max_consecutive_empty:
+                        logger.info(f"Stopping: {consecutive_no_new} consecutive rounds with no new jobs")
                     break
             
             page.close()

@@ -99,37 +99,76 @@ class BaseJobSource(ABC):
     def extract_keywords(self, text: Optional[str]) -> List[str]:
         """
         Extract keywords from job description text.
-        
-        This is a basic implementation. Override for more sophisticated extraction.
+        Improved implementation with better filtering and technical term extraction.
         
         Args:
             text: Text to extract keywords from
             
         Returns:
-            List of extracted keywords
+            List of extracted keywords (prioritized by relevance)
         """
         if not text:
             return []
         
-        # Simple keyword extraction - split on common separators
-        # In production, use NLP libraries or LLM for better extraction
         import re
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
+        from collections import Counter
         
-        # Filter common stop words
+        # Extract words (including hyphenated terms like "machine-learning")
+        words = re.findall(r'\b[a-zA-Z][a-zA-Z-]{2,}\b', text.lower())
+        
+        # Filter common stop words (more comprehensive list)
         stop_words = {
             "the", "and", "for", "are", "but", "not", "you", "all", "can", "her",
             "was", "one", "our", "out", "day", "get", "has", "him", "his", "how",
             "man", "new", "now", "old", "see", "two", "way", "who", "its", "may",
-            "use", "her", "she", "him", "his", "how", "man", "new", "now", "old",
+            "use", "she", "this", "that", "with", "from", "than", "more", "most",
+            "will", "would", "should", "could", "must", "might", "may", "shall",
+            "what", "when", "where", "which", "while", "work", "years", "year",
+            "team", "company", "role", "position", "job", "jobs", "will", "be",
+            "years", "experience", "experience", "required", "preferred", "skills",
         }
         
-        # Extract unique keywords (3+ chars, not stop words)
-        keywords = [w for w in set(words) if w not in stop_words and len(w) >= 3]
+        # Technical terms and skills (prioritize these)
+        technical_terms = {
+            "python", "java", "javascript", "typescript", "react", "angular", "vue",
+            "node", "django", "flask", "fastapi", "spring", "sql", "nosql", "mongodb",
+            "postgresql", "mysql", "redis", "docker", "kubernetes", "aws", "azure",
+            "gcp", "terraform", "ansible", "ci/cd", "jenkins", "git", "github",
+            "gitlab", "agile", "scrum", "kanban", "api", "rest", "graphql", "microservices",
+            "machine", "learning", "ai", "ml", "deep", "neural", "data", "science",
+            "analytics", "analyst", "engineer", "developer", "architect", "manager",
+            "product", "manager", "pm", "scrum", "master", "devops", "sre", "qa",
+            "testing", "automation", "selenium", "cypress", "junit", "pytest",
+        }
         
-        # Limit to top keywords by frequency
-        from collections import Counter
-        keyword_counts = Counter(words)
-        top_keywords = [w for w, _ in keyword_counts.most_common(20) if w not in stop_words]
+        # Count word frequency
+        word_counts = Counter(words)
         
-        return top_keywords[:15]  # Return top 15 keywords
+        # Filter and prioritize
+        keywords = []
+        
+        # 1. Prioritize technical terms and skills (even if less frequent)
+        for word, count in word_counts.most_common(50):
+            word_clean = word.replace('-', ' ').strip()
+            # Check if it's a technical term or multi-word technical term
+            is_technical = any(term in word_clean or word_clean in term for term in technical_terms)
+            
+            if word not in stop_words and len(word.replace('-', '')) >= 3:
+                if is_technical or count >= 2:  # Technical terms or words appearing 2+ times
+                    keywords.append(word)
+        
+        # 2. Add high-frequency non-technical but relevant words
+        for word, count in word_counts.most_common(30):
+            if word not in stop_words and word not in keywords and len(word.replace('-', '')) >= 4 and count >= 3:
+                keywords.append(word)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_keywords = []
+        for kw in keywords:
+            if kw not in seen:
+                seen.add(kw)
+                unique_keywords.append(kw)
+        
+        # Return top 20 keywords
+        return unique_keywords[:20]
