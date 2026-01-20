@@ -19,15 +19,15 @@ class LLMConfig(BaseSettings):
     )
     
     # Provider: "openai" or "ollama"
-    provider: str = Field(default="openai", env="LLM_PROVIDER")
+    provider: str = Field(default="openai", validation_alias="LLM_PROVIDER")
     api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")  # Optional if using Ollama
-    model: str = Field(default="gpt-4o-mini", env="LLM_MODEL")  # Updated from gpt-4-turbo-preview (deprecated)
-    temperature: float = Field(default=0.7, env="LLM_TEMPERATURE")
-    top_p: float = Field(default=1.0, env="LLM_TOP_P")
-    max_tokens: int = Field(default=2000, env="LLM_MAX_TOKENS")
+    model: str = Field(default="gpt-4o-mini", validation_alias="LLM_MODEL")  # Updated from gpt-4-turbo-preview (deprecated)
+    temperature: float = Field(default=0.7, validation_alias="LLM_TEMPERATURE")
+    top_p: float = Field(default=1.0, validation_alias="LLM_TOP_P")
+    max_tokens: int = Field(default=2000, validation_alias="LLM_MAX_TOKENS")
     
     # Ollama-specific settings
-    ollama_base_url: str = Field(default="http://localhost:11434", env="OLLAMA_BASE_URL")
+    ollama_base_url: str = Field(default="http://localhost:11434", validation_alias="OLLAMA_BASE_URL")
 
 
 class DatabaseConfig(BaseSettings):
@@ -40,7 +40,7 @@ class DatabaseConfig(BaseSettings):
         extra="ignore"
     )
     
-    url: str = Field(default="sqlite:///./job_pipeline.db", env="DATABASE_URL")
+    url: str = Field(default="sqlite:///./job_pipeline.db", validation_alias="DATABASE_URL")
 
 
 class PlaywrightConfig(BaseSettings):
@@ -53,8 +53,8 @@ class PlaywrightConfig(BaseSettings):
         extra="ignore"
     )
     
-    enabled: bool = Field(default=True, env="ENABLE_PLAYWRIGHT")
-    headless: bool = Field(default=True, env="PLAYWRIGHT_HEADLESS")
+    enabled: bool = Field(default=True, validation_alias="ENABLE_PLAYWRIGHT")
+    headless: bool = Field(default=True, validation_alias="PLAYWRIGHT_HEADLESS")
 
 
 class APIConfig(BaseSettings):
@@ -67,11 +67,11 @@ class APIConfig(BaseSettings):
         extra="ignore"
     )
     
-    host: str = Field(default="0.0.0.0", env="API_HOST")
-    port: int = Field(default=8000, env="API_PORT")
+    host: str = Field(default="0.0.0.0", validation_alias="API_HOST")
+    port: int = Field(default=8000, validation_alias="API_PORT")
     cors_origins: str = Field(
         default="http://localhost:3000", 
-        env="CORS_ORIGINS"
+        validation_alias="CORS_ORIGINS"
     )
 
 
@@ -168,6 +168,41 @@ class Config:
     def get_content_prompts(self) -> Dict:
         """Get content generation prompts."""
         return self.yaml_config.get("content_prompts", {})
+
+    def get_application_defaults(self) -> Dict:
+        """Get application defaults for auto-apply feature.
+
+        These defaults are used when user profile fields are not set.
+        Users can override by updating their profile via the API.
+        """
+        defaults = {
+            "work_authorization": "Yes, I am authorized to work in the United States",
+            "visa_sponsorship_required": False,
+            "visa_sponsorship_response": "No, I do not require visa sponsorship",
+            "notice_period": "2-3 weeks",
+            "notice_period_response": "I am available to start within {notice_period} of offer acceptance.",
+            "salary_range": {
+                "min": 115000,
+                "max": 200000,
+                "response_template": "My salary expectation is in the range of ${salary_min}-${salary_max}, depending on the total compensation package and responsibilities."
+            },
+            "remote_preference": "flexible",
+            "remote_response": "Yes, I am comfortable working remotely and have extensive experience with remote collaboration. I am also open to hybrid arrangements if preferred.",
+            "relocation_preference": "open to discussing",
+            "relocation_response": "I am open to discussing relocation for the right opportunity.",
+            "llm_fallback": {
+                "enabled": True,
+                "max_tokens": 150
+            }
+        }
+        yaml_defaults = self.yaml_config.get("application_defaults", {})
+        # Deep merge yaml_defaults into defaults
+        for key, value in yaml_defaults.items():
+            if isinstance(value, dict) and key in defaults and isinstance(defaults[key], dict):
+                defaults[key].update(value)
+            else:
+                defaults[key] = value
+        return defaults
 
 
 # Global config instance

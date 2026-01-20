@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 import concurrent.futures
 from functools import partial
 
-from app.jobsources import LinkedInAdapter, IndeedAdapter, WellfoundAdapter, MonsterAdapter
+from app.jobsources import (
+    LinkedInAdapter, IndeedAdapter, WellfoundAdapter, MonsterAdapter,
+    GreenhouseAdapter, WorkdayAdapter
+)
 from app.jobsources.base import JobListing
 from app.config import config
 from app.agents.log_agent import LogAgent
@@ -93,6 +96,18 @@ class SearchAgent:
                 config=monster_config,
                 api_key=None  # Monster doesn't have API key
             )
+
+        # Greenhouse - public API, no scraping needed
+        if job_sources_config.get("greenhouse", {}).get("enabled", True):
+            greenhouse_config = job_sources_config.get("greenhouse", {})
+            self.sources["greenhouse"] = GreenhouseAdapter(config=greenhouse_config)
+            logger.info(f"Greenhouse adapter initialized with {len(self.sources['greenhouse'].companies)} companies")
+
+        # Workday - direct API access to company instances
+        if job_sources_config.get("workday", {}).get("enabled", True):
+            workday_config = job_sources_config.get("workday", {})
+            self.sources["workday"] = WorkdayAdapter(config=workday_config)
+            logger.info(f"Workday adapter initialized with {len(self.sources['workday'].companies)} companies")
     
     def search(
         self,
@@ -146,11 +161,11 @@ class SearchAgent:
             raise ValueError(f"All titles were invalid. Please provide valid job titles (minimum {self.query_enhancer.min_query_length} characters, not generic terms).")
         
         # Determine which sources to search
-        # Default sources: linkedin, indeed, monster, wellfound (if enabled)
+        # Default sources: greenhouse and workday (most reliable), linkedin, indeed
         if sources:
             sources_to_search = sources
         else:
-            default_sources = ["linkedin", "indeed", "monster", "wellfound"]
+            default_sources = ["greenhouse", "workday", "linkedin", "indeed"]
             sources_to_search = [s for s in default_sources if s in self.sources]
         sources_searched = []
         all_jobs = []

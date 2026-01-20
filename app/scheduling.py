@@ -10,24 +10,26 @@ from datetime import datetime
 from app.db import get_db_context
 from app.orchestrator import PipelineOrchestrator
 from app.config import config
+from app.services.auto_apply_service import AutoApplyService
 
 logger = logging.getLogger(__name__)
 
 
 class PipelineScheduler:
     """Scheduler for running the pipeline at regular intervals."""
-    
+
     def __init__(self, run_config: Optional[Dict[str, Any]] = None):
         """
         Initialize the scheduler.
-        
+
         Args:
             run_config: Default configuration for scheduled runs
         """
         self.run_config = run_config or {}
         self.running = False
         self.thread: Optional[threading.Thread] = None
-        
+        self._lock = threading.Lock()  # Lock for thread-safe start/stop
+
         # Get scheduler config
         scheduler_config = config.get_scheduler_config()
         self.enabled = scheduler_config.get("enabled", True)
@@ -94,58 +96,109 @@ class PipelineScheduler:
                 )
                 
                 logger.info(f"Scheduled run {run.id} completed: {result}")
-        
+
+                # Process auto-apply if enabled
+                self._process_auto_apply(db, run.id)
+
         except Exception as e:
             logger.error(f"Error in scheduled run: {e}", exc_info=True)
+
+    def _process_auto_apply(self, db, run_id: int):
+        """Process auto-apply for approved jobs from a run."""
+        try:
+            feature_flags = config.get_feature_flags()
+            if not feature_flags.get("enable_auto_apply", False):
+                logger.debug("Auto-apply is disabled, skipping")
+                return
+
+            auto_apply_service = AutoApplyService(db)
+
+            if not auto_apply_service.enabled:
+                logger.debug("Auto-apply service is disabled, skipping")
+                return
+
+            # Queue approved jobs from this run
+            queued = auto_apply_service.queue_approved_jobs(run_id=run_id)
+
+            if queued > 0:
+                logger.info(f"Queued {queued} jobs from run {run_id} for auto-apply")
+
+                # Process batch immediately (non-blocking for the rest)
+                results = auto_apply_service.process_batch(batch_size=5)
+
+                successful = sum(1 for r in results if r.get("status") == "success")
+                failed = sum(1 for r in results if r.get("status") == "failed")
+
+                logger.info(f"Auto-apply batch processed: {successful} successful, {failed} failed")
+
+                # If more jobs remain, start background processing
+                status = auto_apply_service.get_status()
+                if status["queue_size"] > 0:
+                    auto_apply_service.start_background_processing()
+                    logger.info(f"Started background processing for {status['queue_size']} remaining jobs")
+            else:
+                logger.info(f"No jobs to queue for auto-apply from run {run_id}")
+
+        except Exception as e:
+            logger.error(f"Error in auto-apply processing: {e}", exc_info=True)
     
     def start(self):
-        """Start the scheduler."""
-        if not self.enabled:
-            logger.info("Scheduler is disabled")
-            return
-        
-        if self.running:
-            logger.warning("Scheduler is already running")
-            return
-        
-        # Schedule job
-        schedule.every(self.frequency_hours).hours.do(self._run_scheduled_job)
-        
-        # Also schedule at specific time if configured
-        if self.run_at_time:
-            schedule.every().day.at(self.run_at_time).do(self._run_scheduled_job)
-        
-        self.running = True
-        
-        def run_scheduler():
-            """Run the scheduler loop."""
-            logger.info(f"Scheduler started (frequency: {self.frequency_hours} hours, time: {self.run_at_time})")
-            while self.running:
-                schedule.run_pending()
-                time.sleep(60)  # Check every minute
-        
-        self.thread = threading.Thread(target=run_scheduler, daemon=True)
-        self.thread.start()
-        
-        logger.info("Scheduler thread started")
-    
+        """Start the scheduler. Thread-safe."""
+        with self._lock:
+            if not self.enabled:
+                logger.info("Scheduler is disabled")
+                return
+
+            if self.running:
+                logger.warning("Scheduler is already running")
+                return
+
+            # Schedule job
+            schedule.every(self.frequency_hours).hours.do(self._run_scheduled_job)
+
+            # Also schedule at specific time if configured
+            if self.run_at_time:
+                schedule.every().day.at(self.run_at_time).do(self._run_scheduled_job)
+
+            self.running = True
+
+            def run_scheduler():
+                """Run the scheduler loop."""
+                logger.info(f"Scheduler started (frequency: {self.frequency_hours} hours, time: {self.run_at_time})")
+                while self.running:
+                    schedule.run_pending()
+                    time.sleep(60)  # Check every minute
+
+            self.thread = threading.Thread(target=run_scheduler, daemon=True)
+            self.thread.start()
+
+            logger.info("Scheduler thread started")
+
     def stop(self):
-        """Stop the scheduler."""
-        if not self.running:
-            return
-        
-        self.running = False
-        schedule.clear()
-        logger.info("Scheduler stopped")
+        """Stop the scheduler. Thread-safe."""
+        with self._lock:
+            if not self.running:
+                return
+
+            self.running = False
+            schedule.clear()
+            logger.info("Scheduler stopped")
 
 
-# Global scheduler instance
+# Global scheduler instance with thread-safe initialization
 _scheduler: Optional[PipelineScheduler] = None
+_scheduler_lock = threading.Lock()
 
 
 def get_scheduler() -> PipelineScheduler:
-    """Get or create the global scheduler instance."""
+    """Get or create the global scheduler instance.
+
+    Thread-safe implementation using double-checked locking pattern.
+    """
     global _scheduler
     if _scheduler is None:
-        _scheduler = PipelineScheduler()
+        with _scheduler_lock:
+            # Double-check after acquiring lock
+            if _scheduler is None:
+                _scheduler = PipelineScheduler()
     return _scheduler

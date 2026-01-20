@@ -1,0 +1,520 @@
+/**
+ * Settings Page
+ */
+
+const settingsPage = {
+    async render() {
+        const content = document.getElementById('content');
+
+        try {
+            const [profile, schedulerStatus] = await Promise.all([
+                api.getProfile().catch(() => ({})),
+                api.getSchedulerStatus().catch(() => ({ running: false }))
+            ]);
+
+            content.innerHTML = `
+                <div class="page-header">
+                    <h2>Settings</h2>
+                    <p>Configure your profile and preferences</p>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab active" onclick="settingsPage.showTab('profile')">Profile</button>
+                    <button class="tab" onclick="settingsPage.showTab('autoapply')">Auto-Apply</button>
+                    <button class="tab" onclick="settingsPage.showTab('scheduler')">Scheduler</button>
+                    <button class="tab" onclick="settingsPage.showTab('resume')">Resume</button>
+                </div>
+
+                <div id="settingsContent">
+                    ${this.renderProfileTab(profile)}
+                </div>
+
+                <!-- Store scheduler status for tab switch -->
+                <script>window.schedulerStatus = ${JSON.stringify(schedulerStatus)}</script>
+            `;
+        } catch (error) {
+            content.innerHTML = components.emptyState('Error loading settings', error.message);
+        }
+    },
+
+    showTab(tab) {
+        // Update tab active state
+        document.querySelectorAll('.tabs .tab').forEach((t, i) => {
+            t.classList.toggle('active',
+                (tab === 'profile' && i === 0) ||
+                (tab === 'autoapply' && i === 1) ||
+                (tab === 'scheduler' && i === 2) ||
+                (tab === 'resume' && i === 3)
+            );
+        });
+
+        const settingsContent = document.getElementById('settingsContent');
+
+        if (tab === 'profile') {
+            api.getProfile().then(profile => {
+                settingsContent.innerHTML = this.renderProfileTab(profile);
+                this.attachProfileHandler();
+            });
+        } else if (tab === 'autoapply') {
+            api.getAutoApplyStatus().then(status => {
+                settingsContent.innerHTML = this.renderAutoApplyTab(status);
+            }).catch(() => {
+                settingsContent.innerHTML = this.renderAutoApplyTab({ enabled: false, queue_size: 0 });
+            });
+        } else if (tab === 'scheduler') {
+            settingsContent.innerHTML = this.renderSchedulerTab(window.schedulerStatus);
+            this.attachSchedulerHandler();
+        } else if (tab === 'resume') {
+            api.getProfile().then(profile => {
+                settingsContent.innerHTML = this.renderResumeTab(profile);
+                this.attachResumeHandler();
+            });
+        }
+    },
+
+    renderProfileTab(profile) {
+        return `
+            <form id="profileForm" class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Personal Information</h3>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Full Name</label>
+                        <input type="text" class="form-input" name="name"
+                            value="${components.escapeHtml(profile.name || '')}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-input" name="email"
+                            value="${components.escapeHtml(profile.email || '')}">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Phone</label>
+                        <input type="tel" class="form-input" name="phone"
+                            value="${components.escapeHtml(profile.phone || '')}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Location</label>
+                        <input type="text" class="form-input" name="location"
+                            value="${components.escapeHtml(profile.location || '')}">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">LinkedIn URL</label>
+                        <input type="url" class="form-input" name="linkedin_url"
+                            value="${components.escapeHtml(profile.linkedin_url || '')}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Portfolio/Website</label>
+                        <input type="url" class="form-input" name="portfolio_url"
+                            value="${components.escapeHtml(profile.portfolio_url || '')}">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Current Title</label>
+                    <input type="text" class="form-input" name="current_title"
+                        value="${components.escapeHtml(profile.current_title || '')}">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Target Job Titles</label>
+                    <input type="text" class="form-input" name="target_titles"
+                        value="${(profile.target_titles || []).join(', ')}"
+                        placeholder="e.g., Product Manager, Senior PM">
+                    <small class="text-muted">Separate with commas</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Skills</label>
+                    <input type="text" class="form-input" name="skills"
+                        value="${(profile.skills || []).join(', ')}"
+                        placeholder="e.g., Python, SQL, Product Strategy">
+                    <small class="text-muted">Separate with commas</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Experience Summary</label>
+                    <textarea class="form-textarea" name="experience_summary"
+                        placeholder="Brief summary of your experience...">${components.escapeHtml(profile.experience_summary || '')}</textarea>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Save Profile</button>
+            </form>
+        `;
+    },
+
+    renderAutoApplyTab(status) {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Auto-Apply Settings</h3>
+                </div>
+
+                <div class="flex-between mb-2">
+                    <div>
+                        <p>Status: ${status.enabled ?
+                            '<span class="badge badge-success">Enabled</span>' :
+                            '<span class="badge badge-neutral">Disabled</span>'
+                        }</p>
+                        <p class="text-muted mt-1">
+                            Queue: ${status.queue_size || 0} jobs |
+                            Applied this hour: ${status.applications_this_hour || 0}/${status.max_per_hour || 20}
+                        </p>
+                    </div>
+                    <div class="flex gap-1">
+                        ${status.enabled ?
+                            '<button class="btn btn-danger" onclick="settingsPage.disableAutoApply()">Disable</button>' :
+                            '<button class="btn btn-success" onclick="settingsPage.enableAutoApply()">Enable</button>'
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Application Queue</h3>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Queue approved jobs for application</label>
+                    <div class="flex gap-1">
+                        <button class="btn btn-secondary" onclick="settingsPage.queueApprovedJobs()">
+                            Queue All Approved
+                        </button>
+                        <button class="btn btn-secondary" onclick="settingsPage.queueHighScoreJobs()">
+                            Queue High Score (8+)
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group mt-2">
+                    <label class="form-label">Process applications</label>
+                    <div class="flex gap-1">
+                        <button class="btn btn-primary" onclick="settingsPage.processBatch(5)"
+                            ${!status.enabled ? 'disabled' : ''}>
+                            Process 5 Jobs
+                        </button>
+                        <button class="btn btn-primary" onclick="settingsPage.startAutoApply()"
+                            ${!status.enabled ? 'disabled' : ''}>
+                            Start Auto-Apply
+                        </button>
+                        <button class="btn btn-secondary" onclick="settingsPage.stopAutoApply()">
+                            Stop
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group mt-2">
+                    <button class="btn btn-sm btn-secondary" onclick="settingsPage.clearQueue()">
+                        Clear Queue
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Test Answer Generation</h3>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Application Question</label>
+                    <input type="text" class="form-input" id="testQuestion"
+                        placeholder="e.g., Why are you interested in this role?">
+                </div>
+
+                <button class="btn btn-secondary" onclick="settingsPage.testAnswerGeneration()">
+                    Generate Answer
+                </button>
+
+                <div id="generatedAnswer" class="mt-2" style="display: none;">
+                    <label class="form-label">Generated Answer:</label>
+                    <div class="card" style="background: var(--bg-tertiary);">
+                        <pre id="answerText" style="white-space: pre-wrap; margin: 0;"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Rate Limiting</h3>
+                </div>
+                <table>
+                    <tbody>
+                        <tr>
+                            <td>Delay between applications</td>
+                            <td>${status.rate_limit_delay || 30} seconds</td>
+                        </tr>
+                        <tr>
+                            <td>Max applications per hour</td>
+                            <td>${status.max_per_hour || 20}</td>
+                        </tr>
+                        <tr>
+                            <td>Auto-approval threshold</td>
+                            <td>${status.auto_apply_threshold || 8.0}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        `;
+    },
+
+    renderSchedulerTab(status) {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Automated Search Scheduler</h3>
+                </div>
+
+                <div class="flex-between mb-2">
+                    <div>
+                        <p>Status: ${status.running ?
+                            '<span class="badge badge-success">Running</span>' :
+                            '<span class="badge badge-neutral">Stopped</span>'
+                        }</p>
+                        ${status.next_run ? `<p class="text-muted">Next run: ${components.formatDate(status.next_run)}</p>` : ''}
+                    </div>
+                    <div class="flex gap-1">
+                        ${status.running ?
+                            '<button class="btn btn-danger" onclick="settingsPage.stopScheduler()">Stop Scheduler</button>' :
+                            '<button class="btn btn-success" onclick="settingsPage.startScheduler()">Start Scheduler</button>'
+                        }
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <p class="text-muted">
+                        The scheduler will automatically run job searches based on your saved configuration.
+                        Configure search defaults on the dashboard.
+                    </p>
+                </div>
+            </div>
+        `;
+    },
+
+    renderResumeTab(profile) {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Resume Upload</h3>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Upload Resume (PDF)</label>
+                    <input type="file" id="resumeFile" accept=".pdf,.doc,.docx"
+                        class="form-input" style="padding: 0.5rem;">
+                </div>
+
+                <button class="btn btn-primary" onclick="settingsPage.uploadResume()">
+                    Upload Resume
+                </button>
+
+                ${profile.resume_file_path ? `
+                    <div class="mt-2">
+                        <p class="text-muted">Current resume: ${profile.resume_file_path.split('/').pop()}</p>
+                    </div>
+                ` : ''}
+
+                ${profile.resume_text ? `
+                    <div class="card mt-2" style="background: var(--bg-tertiary);">
+                        <div class="card-header">
+                            <h4 class="card-title">Extracted Text</h4>
+                        </div>
+                        <pre style="white-space: pre-wrap; font-size: 0.875rem; color: var(--text-secondary); max-height: 300px; overflow-y: auto;">${components.escapeHtml(profile.resume_text)}</pre>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    },
+
+    attachProfileHandler() {
+        const form = document.getElementById('profileForm');
+        if (!form) return;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(form);
+            const data = {
+                name: formData.get('name'),
+                email: formData.get('email'),
+                phone: formData.get('phone'),
+                location: formData.get('location'),
+                linkedin_url: formData.get('linkedin_url'),
+                portfolio_url: formData.get('portfolio_url'),
+                current_title: formData.get('current_title'),
+                target_titles: formData.get('target_titles')?.split(',').map(t => t.trim()).filter(Boolean),
+                skills: formData.get('skills')?.split(',').map(s => s.trim()).filter(Boolean),
+                experience_summary: formData.get('experience_summary')
+            };
+
+            try {
+                await api.updateProfile(data);
+                components.notify('Profile saved!', 'success');
+            } catch (error) {
+                components.notify(`Error: ${error.message}`, 'error');
+            }
+        });
+    },
+
+    attachSchedulerHandler() {
+        // Scheduler buttons are handled via onclick
+    },
+
+    attachResumeHandler() {
+        // Resume upload is handled via onclick
+    },
+
+    async startScheduler() {
+        try {
+            await api.startScheduler();
+            components.notify('Scheduler started!', 'success');
+            window.schedulerStatus = { running: true };
+            this.showTab('scheduler');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async stopScheduler() {
+        try {
+            await api.stopScheduler();
+            components.notify('Scheduler stopped', 'success');
+            window.schedulerStatus = { running: false };
+            this.showTab('scheduler');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async uploadResume() {
+        const fileInput = document.getElementById('resumeFile');
+        const file = fileInput?.files[0];
+
+        if (!file) {
+            components.notify('Please select a file', 'error');
+            return;
+        }
+
+        try {
+            await api.uploadResume(file);
+            components.notify('Resume uploaded!', 'success');
+            this.showTab('resume');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    // Auto-Apply Methods
+    async enableAutoApply() {
+        try {
+            await api.enableAutoApply();
+            components.notify('Auto-apply enabled!', 'success');
+            this.showTab('autoapply');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async disableAutoApply() {
+        try {
+            await api.disableAutoApply();
+            components.notify('Auto-apply disabled', 'success');
+            this.showTab('autoapply');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async queueApprovedJobs() {
+        try {
+            const result = await api.queueJobsForApplication({});
+            components.notify(`Queued ${result.jobs_added} jobs`, 'success');
+            this.showTab('autoapply');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async queueHighScoreJobs() {
+        try {
+            const result = await api.queueJobsForApplication({ min_score: 8.0 });
+            components.notify(`Queued ${result.jobs_added} high-score jobs`, 'success');
+            this.showTab('autoapply');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async processBatch(batchSize) {
+        try {
+            await api.processApplicationBatch(batchSize);
+            components.notify(`Processing ${batchSize} applications...`, 'info');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async startAutoApply() {
+        try {
+            await api.startAutoApply();
+            components.notify('Auto-apply processing started', 'success');
+            this.showTab('autoapply');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async stopAutoApply() {
+        try {
+            await api.stopAutoApply();
+            components.notify('Auto-apply stopped', 'success');
+            this.showTab('autoapply');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async clearQueue() {
+        try {
+            await api.clearApplicationQueue();
+            components.notify('Queue cleared', 'success');
+            this.showTab('autoapply');
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async testAnswerGeneration() {
+        const question = document.getElementById('testQuestion')?.value;
+        if (!question) {
+            components.notify('Please enter a question', 'error');
+            return;
+        }
+
+        try {
+            const result = await api.answerQuestion(question);
+            const answerDiv = document.getElementById('generatedAnswer');
+            const answerText = document.getElementById('answerText');
+
+            if (result.answer) {
+                answerText.textContent = result.answer;
+                answerDiv.style.display = 'block';
+            } else {
+                answerText.textContent = 'No template matched for this question.';
+                answerDiv.style.display = 'block';
+            }
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    }
+};
+
+window.settingsPage = settingsPage;

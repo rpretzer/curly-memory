@@ -61,6 +61,15 @@ job_sources:
     enabled: true
     max_results: 50
     rate_limit_delay: 2.0
+  greenhouse:
+    enabled: true
+    rate_limit_delay: 0.5
+    greenhouse_companies:
+      - stripe
+      - airbnb
+      - twitch
+      - cloudflare
+      - figma
 
 # Feature Flags
 features:

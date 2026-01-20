@@ -1,0 +1,25 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Application
+*.db
+*.log
+resumes/
+data/
+scheduler.lock
+.encryption_key
+
+# Testing
+.pytest_cache/
+tests/
+
+# Misc
+.DS_Store

@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from app.models import Run, RunStatus, JobStatus
+from app.models import Run, RunStatus, JobStatus, compute_content_hash
 from app.agents import (
     SearchAgent,
     FilterAndScoreAgent,
@@ -168,22 +168,37 @@ class PipelineOrchestrator:
             job_ids = []
             saved_count = 0
             existing_count = 0
+            duplicate_content_count = 0
             from app.models import Job, JobSource, ApplicationType
-            
+            from sqlalchemy import or_
+
             for idx, listing in enumerate(job_listings, 1):
                 logger.debug(f"Processing listing {idx}/{len(job_listings)}: {listing.title} @ {listing.company}")
-                
-                # Check if job already exists
+
+                # Compute content hash for deduplication
+                content_hash = compute_content_hash(
+                    listing.title,
+                    listing.company,
+                    listing.location or ""
+                )
+
+                # Check if job already exists by URL OR content hash (cross-run deduplication)
                 existing = self.db.query(Job).filter(
-                    Job.source_url == listing.source_url
+                    or_(
+                        Job.source_url == listing.source_url,
+                        Job.content_hash == content_hash
+                    )
                 ).first()
-                
+
                 if existing:
-                    existing_count += 1
-                    logger.debug(f"  → Job already exists (ID: {existing.id}), updating run_id")
-                    if existing.run_id != run_id:
-                        existing.run_id = run_id
-                        self.db.commit()
+                    if existing.source_url == listing.source_url:
+                        existing_count += 1
+                        logger.debug(f"  → Job already exists by URL (ID: {existing.id})")
+                    else:
+                        duplicate_content_count += 1
+                        logger.debug(f"  → Job already exists by content hash (ID: {existing.id}, same job different source)")
+                    # Don't overwrite run_id - keep original run for history
+                    # Just add to our job_ids list so it appears in this run's results
                     job_ids.append(existing.id)
                     continue
                 
@@ -273,27 +288,16 @@ class PipelineOrchestrator:
     ) -> List[int]:
         """
         Run search and scoring phases.
-        
+
         Returns:
             List of job IDs that passed the scoring threshold
         """
-        # Run search
-        job_ids = self.run_search_only(
-            run_id=run_id,
-            titles=titles,
-            locations=locations,
-            remote=remote,
-            keywords=keywords,
-            sources=sources,
-            max_results=max_results,
-        )
-        
         # Get max_results from config if not provided
         if max_results is None:
             search_config = config.get_search_config()
             max_results = search_config.get("default_max_results_per_source", 100)
-        
-        # Run search
+
+        # Run search phase
         job_ids = self.run_search_only(
             run_id=run_id,
             titles=titles,
@@ -303,7 +307,7 @@ class PipelineOrchestrator:
             sources=sources,
             max_results=max_results,
         )
-        
+
         run = self.db.query(Run).filter(Run.id == run_id).first()
         run.status = RunStatus.SCORING
         self.db.commit()
@@ -352,12 +356,26 @@ class PipelineOrchestrator:
             logger.info(f"Jobs found: {len(job_listings)}")
             logger.info(f"Jobs above threshold: {len(scored_jobs)}")
             
+            # Log completion
+            self.log_agent.log(
+                agent_name="Orchestrator",
+                status="info",
+                message=f"Scoring complete. {len(scored_jobs)} jobs above threshold.",
+                run_id=run_id,
+                step="score_complete",
+                metadata={"scored_count": len(scored_jobs)}
+            )
+
+            # Count auto-approved jobs (approval happened in filter_score_agent)
+            auto_approved_count = sum(1 for job in scored_jobs if job.approved)
+
             run.jobs_scored = len(scored_jobs)
             run.jobs_above_threshold = len(scored_jobs)
+            run.jobs_approved = auto_approved_count
             run.status = RunStatus.COMPLETED
             run.completed_at = datetime.utcnow()
             self.db.commit()
-            
+
             return [job.id for job in scored_jobs]
         
         except Exception as e:
@@ -458,6 +476,14 @@ class PipelineOrchestrator:
             run.status = RunStatus.APPLYING
             self.db.commit()
             
+            self.log_agent.log(
+                agent_name="Orchestrator",
+                status="info",
+                message="Starting auto-apply phase",
+                run_id=run_id,
+                step="start_apply"
+            )
+            
             from app.models import Job
             approved_jobs = self.db.query(Job).filter(
                 Job.id.in_(job_ids),
@@ -480,6 +506,13 @@ class PipelineOrchestrator:
                         failed_count += 1
                 except Exception as e:
                     logger.error(f"Error applying to job {job.id}: {e}", exc_info=True)
+                    self.log_agent.log_error(
+                        agent_name="Orchestrator",
+                        error=e,
+                        run_id=run_id,
+                        job_id=job.id,
+                        step="batch_apply_job"
+                    )
                     failed_count += 1
             
             run.jobs_applied = applied_count

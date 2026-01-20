@@ -2,13 +2,37 @@
 
 from datetime import datetime
 from typing import Optional
+import hashlib
+import re
 from sqlalchemy import (
-    Column, Integer, String, Float, Text, Boolean, 
+    Column, Integer, String, Float, Text, Boolean,
     DateTime, ForeignKey, JSON, Enum as SQLEnum
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import enum
+
+
+def normalize_text(text: str) -> str:
+    """Normalize text for consistent comparison."""
+    if not text:
+        return ""
+    # Lowercase, remove extra whitespace, remove special chars
+    text = text.lower().strip()
+    text = re.sub(r'[^\w\s]', '', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+
+def compute_content_hash(title: str, company: str, location: str = "") -> str:
+    """
+    Compute a hash from normalized job content for deduplication.
+
+    This enables detecting duplicate jobs even when URLs differ
+    (e.g., same job posted on multiple boards or with different tracking params).
+    """
+    normalized = f"{normalize_text(title)}|{normalize_text(company)}|{normalize_text(location)}"
+    return hashlib.sha256(normalized.encode()).hexdigest()[:32]
 
 Base = declarative_base()
 
@@ -50,6 +74,9 @@ class JobSource(str, enum.Enum):
     LINKEDIN = "linkedin"
     INDEED = "indeed"
     WELLFOUND = "wellfound"
+    MONSTER = "monster"
+    GREENHOUSE = "greenhouse"
+    WORKDAY = "workday"
     UNKNOWN = "unknown"
 
 
@@ -59,7 +86,7 @@ class Job(Base):
     __tablename__ = "jobs"
     
     id = Column(Integer, primary_key=True, index=True)
-    run_id = Column(Integer, ForeignKey("runs.id"), nullable=True, index=True)
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=True, index=True)
     
     # Job metadata
     title = Column(String(500), nullable=False, index=True)
@@ -67,6 +94,7 @@ class Job(Base):
     location = Column(String(200), nullable=True, index=True)
     source = Column(SQLEnum(JobSource), default=JobSource.UNKNOWN, index=True)
     source_url = Column(Text, nullable=False, unique=True)
+    content_hash = Column(String(32), nullable=True, index=True)  # For cross-source deduplication
     application_type = Column(SQLEnum(ApplicationType), default=ApplicationType.UNKNOWN)
     
     # Parsed content
@@ -151,8 +179,8 @@ class AgentLog(Base):
     __tablename__ = "agent_logs"
     
     id = Column(Integer, primary_key=True, index=True)
-    run_id = Column(Integer, ForeignKey("runs.id"), nullable=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True, index=True)
+    run_id = Column(Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=True, index=True)
     
     # Agent identification
     agent_name = Column(String(100), nullable=False, index=True)
@@ -209,12 +237,22 @@ class UserProfile(Base):
     # Resume content
     resume_text = Column(Text, nullable=True)  # Full resume text
     resume_bullet_points = Column(JSON, nullable=True)  # Structured bullet points
+    resume_file_path = Column(String(500), nullable=True)  # Path to uploaded resume file
     
     # Preferences
     target_companies = Column(JSON, nullable=True)  # List of target companies
     must_have_keywords = Column(JSON, nullable=True)
     nice_to_have_keywords = Column(JSON, nullable=True)
-    
+
+    # Application preferences (for auto-apply)
+    salary_min = Column(Integer, nullable=True)  # Minimum salary expectation
+    salary_max = Column(Integer, nullable=True)  # Maximum salary expectation
+    work_authorization = Column(String(200), nullable=True)  # e.g., "US Citizen", "Authorized to work in US"
+    visa_sponsorship_required = Column(Boolean, default=False, nullable=True)  # Whether needs visa sponsorship
+    notice_period = Column(String(100), nullable=True)  # e.g., "2 weeks", "immediate", "1 month"
+    relocation_preference = Column(String(200), nullable=True)  # e.g., "open", "not willing", "for right opportunity"
+    remote_preference = Column(String(100), nullable=True)  # e.g., "remote only", "hybrid", "flexible"
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

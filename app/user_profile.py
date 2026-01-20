@@ -47,10 +47,12 @@ def get_profile_dict(profile_id: int = 1) -> Dict:
         profile = get_user_profile(db, profile_id)
         if not profile:
             return {}
-        
+
         return {
             "name": profile.name,
             "email": profile.email,
+            "phone": profile.phone,
+            "location": profile.location,
             "current_title": profile.current_title,
             "target_titles": profile.target_titles or [],
             "skills": profile.skills or [],
@@ -63,4 +65,12 @@ def get_profile_dict(profile_id: int = 1) -> Dict:
             "linkedin_url": profile.linkedin_url,
             "portfolio_url": profile.portfolio_url,
             "github_url": profile.github_url,
+            # Application preferences
+            "salary_min": profile.salary_min,
+            "salary_max": profile.salary_max,
+            "work_authorization": profile.work_authorization,
+            "visa_sponsorship_required": profile.visa_sponsorship_required,
+            "notice_period": profile.notice_period,
+            "relocation_preference": profile.relocation_preference,
+            "remote_preference": profile.remote_preference,
         }

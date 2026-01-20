@@ -1,0 +1,14 @@
+{
+  "name": "job-search-pipeline-frontend",
+  "version": "1.0.0",
+  "description": "Vanilla JS frontend for Job Search Pipeline - Tauri ready",
+  "scripts": {
+    "dev": "python3 -m http.server 8080",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

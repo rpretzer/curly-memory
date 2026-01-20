@@ -55,14 +55,16 @@ job_sources:
     use_mantiks: false
     max_retries: 3
     retry_delay: 1
-    linkedin_email: rpretzer@gmail.com
-    linkedin_password: Rutger$11
+    # LinkedIn credentials should be set via environment variables:
+    # LINKEDIN_EMAIL and LINKEDIN_PASSWORD
+    linkedin_email: ${LINKEDIN_EMAIL}
+    linkedin_password: ${LINKEDIN_PASSWORD}
   indeed:
     enabled: true
     max_results: 150  # Increased from 100 for more results
     rate_limit_delay: 2  # Reduced for faster searches
     timeout_seconds: 75  # Increased timeout for more thorough searches
-    use_playwright: false
+    use_playwright: true  # Enabled: HTML scraping broken due to JS rendering
     use_scrapeops: true
     use_hasdata: false
     max_retries: 3
@@ -75,15 +77,58 @@ job_sources:
     max_retries: 3
     retry_delay: 1
   monster:
-    enabled: true
-    max_results: 150  # Increased from 100 for more results
-    rate_limit_delay: 2  # Reduced for faster searches
-    timeout_seconds: 75  # Increased timeout for more thorough searches
+    enabled: false  # Disabled - returns 403/blocked
+    max_results: 150
+    rate_limit_delay: 2
+    timeout_seconds: 75
     use_playwright: false
     use_scrapeops: true
     use_ohio_means_jobs: true
     max_retries: 3
     retry_delay: 2
+  greenhouse:
+    enabled: true  # Uses official public API - most reliable source
+    rate_limit_delay: 0.5
+    include_content: true
+    # Companies to search - add more Greenhouse board tokens as needed
+    # Find board token from URL: boards.greenhouse.io/{board_token}
+    companies:
+      - stripe
+      - airbnb
+      - cloudflare
+      - figma
+      - notion
+      - databricks
+      - plaid
+      - reddit
+      - coinbase
+      - ramp
+      - robinhood
+      - doordash
+      - instacart
+      - affirm
+      - brex
+      - chime
+      - gusto
+      - rippling
+      - airtable
+  workday:
+    enabled: true  # Direct API access to company Workday instances
+    rate_limit_delay: 1.0
+    results_per_company: 50
+    # Companies to search - format: [slug, wd_instance, site_name, display_name]
+    # Find these from company career page URLs like: company.wd5.myworkdayjobs.com/en-US/site
+    companies:
+      - ["adobe", "wd5", "external_experienced", "Adobe"]
+      - ["salesforce", "wd12", "External_Career_Site", "Salesforce"]
+      - ["visa", "wd5", "Visa", "Visa"]
+      - ["mastercard", "wd1", "CorporateCareers", "Mastercard"]
+      - ["servicenow", "wd1", "ServiceNow", "ServiceNow"]
+      - ["nvidia", "wd5", "NVIDIAExternalCareerSite", "NVIDIA"]
+      - ["atlassian", "wd5", "external_career_site", "Atlassian"]
+      - ["okta", "wd1", "Okta", "Okta"]
+      - ["crowdstrike", "wd5", "crowdstrikecareers", "CrowdStrike"]
+      - ["docusign", "wd5", "External", "DocuSign"]
 features:
   enable_playwright: true
   enable_auto_apply: false
@@ -93,6 +138,27 @@ scheduler:
   enabled: true
   run_frequency_hours: 24
   run_at_time: 09:00
+
+# Application Defaults - used when user profile fields are not set
+# Users can override these by updating their profile via the API
+application_defaults:
+  work_authorization: "Yes, I am authorized to work in the United States"
+  visa_sponsorship_required: false
+  visa_sponsorship_response: "No, I do not require visa sponsorship"
+  notice_period: "2-3 weeks"
+  notice_period_response: "I am available to start within {notice_period} of offer acceptance."
+  salary_range:
+    min: 115000
+    max: 200000
+    response_template: "My salary expectation is in the range of ${salary_min}-${salary_max}, depending on the total compensation package and responsibilities."
+  remote_preference: "flexible"
+  remote_response: "Yes, I am comfortable working remotely and have extensive experience with remote collaboration. I am also open to hybrid arrangements if preferred."
+  relocation_preference: "open to discussing"
+  relocation_response: "I am open to discussing relocation for the right opportunity."
+  # LLM fallback settings for questions without template matches
+  llm_fallback:
+    enabled: true
+    max_tokens: 150
 
 # Advanced RAG Configuration
 rag:
