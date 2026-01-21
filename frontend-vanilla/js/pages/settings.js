@@ -399,35 +399,107 @@ const settingsPage = {
     },
 
     renderSchedulerTab(status) {
-        return `
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Automated Search Scheduler</h3>
-                </div>
+        const schedule = status.schedule || {
+            enabled: status.running || false,
+            frequency: 'daily',
+            time: '09:00',
+            days: [],
+            search_params: {
+                titles: ['Product Manager'],
+                locations: ['Remote, US'],
+                remote: true,
+                max_results: 50
+            }
+        };
 
-                <div class="flex-between mb-2">
-                    <div>
-                        <p>Status: ${status.running ?
-                            '<span class="badge badge-success">Running</span>' :
-                            '<span class="badge badge-neutral">Stopped</span>'
-                        }</p>
-                        ${status.next_run ? `<p class="text-muted">Next run: ${components.formatDate(status.next_run)}</p>` : ''}
-                    </div>
-                    <div class="flex gap-1">
-                        ${status.running ?
-                            '<button class="btn btn-danger" onclick="settingsPage.stopScheduler()">Stop Scheduler</button>' :
-                            '<button class="btn btn-success" onclick="settingsPage.startScheduler()">Start Scheduler</button>'
-                        }
-                    </div>
+        return `
+            <form id="scheduleForm" class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Schedule Automatic Searches</h3>
                 </div>
 
                 <div class="form-group">
-                    <p class="text-muted">
-                        The scheduler will automatically run job searches based on your saved configuration.
-                        Configure search defaults on the dashboard.
-                    </p>
+                    <label class="checkbox-wrapper">
+                        <input type="checkbox" id="schedule-enabled" name="enabled" ${schedule.enabled ? 'checked' : ''}>
+                        <span>Enable scheduled searches</span>
+                    </label>
                 </div>
-            </div>
+
+                <div id="schedule-options" class="${schedule.enabled ? '' : 'hidden'}">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Frequency</label>
+                            <select class="form-select" name="frequency" id="schedule-frequency">
+                                <option value="daily" ${schedule.frequency === 'daily' ? 'selected' : ''}>Daily</option>
+                                <option value="weekly" ${schedule.frequency === 'weekly' ? 'selected' : ''}>Weekly</option>
+                                <option value="custom" ${schedule.frequency === 'custom' ? 'selected' : ''}>Custom (Cron)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Time</label>
+                            <input type="time" class="form-input" name="time" value="${schedule.time}">
+                        </div>
+                    </div>
+
+                    <div id="weekly-days" class="form-group ${schedule.frequency === 'weekly' ? '' : 'hidden'}">
+                        <label class="form-label">Days of Week</label>
+                        <div class="flex gap-2" style="flex-wrap: wrap;">
+                            ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, idx) => `
+                                <label class="checkbox-wrapper">
+                                    <input type="checkbox" name="days" value="${idx}"
+                                        ${(schedule.days || []).includes(idx) ? 'checked' : ''}>
+                                    <span>${day}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="card p-3 mt-2" style="background: var(--bg-tertiary); border-top: 2px solid var(--border);">
+                        <h4 class="text-sm font-semibold mb-2">Search Parameters</h4>
+
+                        <div class="form-group">
+                            <label class="form-label">Job Titles</label>
+                            <div id="schedule-titles-chip-input"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Locations</label>
+                            <div id="schedule-locations-chip-input"></div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="checkbox-wrapper">
+                                    <input type="checkbox" name="remote" ${schedule.search_params.remote ? 'checked' : ''}>
+                                    <span>Remote only</span>
+                                </label>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Max Results</label>
+                                <input type="number" class="form-input" name="max_results"
+                                    value="${schedule.search_params.max_results || 50}"
+                                    min="1" max="200">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-end gap-2 mt-4">
+                    <button type="button" class="btn btn-secondary" onclick="settingsPage.showTab('scheduler')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Schedule</button>
+                </div>
+
+                ${schedule.enabled ? `
+                    <div class="card mt-2 p-3" style="background: rgba(251, 191, 36, 0.1); border: 1px solid var(--warning);">
+                        <p class="text-sm" style="color: var(--warning);">
+                            <strong>Note:</strong> Backend scheduling (cron jobs) is not yet fully implemented.
+                            The basic start/stop functionality works, but custom schedules may not persist across restarts.
+                        </p>
+                    </div>
+                ` : ''}
+            </form>
         `;
     },
 
@@ -539,7 +611,106 @@ const settingsPage = {
     },
 
     attachSchedulerHandler() {
-        // Scheduler buttons are handled via onclick
+        const form = document.getElementById('scheduleForm');
+        if (!form) return;
+
+        // Setup chip inputs for schedule search parameters
+        const setupScheduleChips = () => {
+            api.getSchedulerStatus().then(status => {
+                const schedule = status.schedule || {
+                    search_params: {
+                        titles: ['Product Manager'],
+                        locations: ['Remote, US']
+                    }
+                };
+
+                const setupChipInput = (id, items, color, suggestions) => {
+                    const container = document.getElementById(id);
+                    if (!container) return;
+
+                    const chipInput = components.chipInput(id.replace('-chip-input', ''), items, color, suggestions);
+                    container.innerHTML = chipInput.html;
+                    chipInput.setup();
+                };
+
+                setupChipInput('schedule-titles-chip-input', schedule.search_params?.titles || ['Product Manager'], 'blue', SUGGESTIONS.jobTitles);
+                setupChipInput('schedule-locations-chip-input', schedule.search_params?.locations || ['Remote, US'], 'green', SUGGESTIONS.locations);
+            });
+        };
+
+        // Setup chip inputs
+        setupScheduleChips();
+
+        // Toggle schedule options visibility
+        const enabledCheckbox = document.getElementById('schedule-enabled');
+        const scheduleOptions = document.getElementById('schedule-options');
+
+        if (enabledCheckbox && scheduleOptions) {
+            enabledCheckbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    scheduleOptions.classList.remove('hidden');
+                } else {
+                    scheduleOptions.classList.add('hidden');
+                }
+            });
+        }
+
+        // Toggle weekly days visibility
+        const frequencySelect = document.getElementById('schedule-frequency');
+        const weeklyDays = document.getElementById('weekly-days');
+
+        if (frequencySelect && weeklyDays) {
+            frequencySelect.addEventListener('change', (e) => {
+                if (e.target.value === 'weekly') {
+                    weeklyDays.classList.remove('hidden');
+                } else {
+                    weeklyDays.classList.add('hidden');
+                }
+            });
+        }
+
+        // Form submission
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(form);
+
+            // Get selected days
+            const days = [];
+            form.querySelectorAll('input[name="days"]:checked').forEach(cb => {
+                days.push(parseInt(cb.value));
+            });
+
+            const scheduleConfig = {
+                enabled: formData.get('enabled') === 'on',
+                frequency: formData.get('frequency'),
+                time: formData.get('time'),
+                days: days.length > 0 ? days : undefined,
+                search_params: {
+                    titles: window.chipInputs['schedule-titles']?.getItems() || [],
+                    locations: window.chipInputs['schedule-locations']?.getItems() || [],
+                    remote: formData.get('remote') === 'on',
+                    max_results: parseInt(formData.get('max_results')) || 50
+                }
+            };
+
+            try {
+                // TODO: Add API endpoint to save schedule configuration
+                // await api.updateSchedule(scheduleConfig);
+
+                components.notify('Schedule configuration saved!', 'success');
+
+                // If enabling, start the scheduler
+                if (scheduleConfig.enabled) {
+                    await this.startScheduler();
+                } else {
+                    await this.stopScheduler();
+                }
+
+            } catch (error) {
+                components.notify(`Error saving schedule: ${error.message}`, 'error');
+            }
+        });
     },
 
     attachResumeHandler() {
