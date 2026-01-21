@@ -514,7 +514,7 @@ const components = {
 
                 // Setup typeahead if suggestions provided
                 if (suggestions.length > 0) {
-                    const typeahead = this.createTypeahead(inputId, suggestions, (value) => {
+                    const typeahead = components.createTypeahead(inputId, suggestions, (value) => {
                         chipInput.add(value);
                     });
                     typeahead.setup();
