@@ -53,7 +53,8 @@ const settingsPage = {
         if (tab === 'profile') {
             api.getProfile().then(profile => {
                 settingsContent.innerHTML = this.renderProfileTab(profile);
-                this.attachProfileHandler();
+                // Only attach handler if we're in view mode (edit mode handled by toggleProfileMode)
+                // View mode doesn't need the handler since there's no form
             });
         } else if (tab === 'autoapply') {
             api.getAutoApplyStatus().then(status => {
@@ -282,7 +283,7 @@ const settingsPage = {
             const settingsContent = document.getElementById('settingsContent');
             settingsContent.innerHTML = this.renderProfileTab(profile, mode);
             if (mode === 'edit') {
-                this.attachProfileHandler();
+                this.attachProfileHandler(profile);
             }
         });
     },
@@ -546,28 +547,25 @@ const settingsPage = {
         `;
     },
 
-    attachProfileHandler() {
+    attachProfileHandler(profile = {}) {
         const form = document.getElementById('profileForm');
         if (!form) return;
 
-        // Get current profile data from the last API call
-        api.getProfile().then(profile => {
-            // Setup chip inputs
-            const setupChipInput = (id, items, color, suggestions) => {
-                const container = document.getElementById(id);
-                if (!container) return;
+        // Setup chip inputs with profile data
+        const setupChipInput = (id, items, color, suggestions) => {
+            const container = document.getElementById(id);
+            if (!container) return;
 
-                const chipInput = components.chipInput(id.replace('-chip-input', ''), items, color, suggestions);
-                container.innerHTML = chipInput.html;
-                chipInput.setup();
-            };
+            const chipInput = components.chipInput(id.replace('-chip-input', ''), items, color, suggestions);
+            container.innerHTML = chipInput.html;
+            chipInput.setup();
+        };
 
-            setupChipInput('target-titles-chip-input', profile.target_titles || [], 'blue', SUGGESTIONS.jobTitles);
-            setupChipInput('skills-chip-input', profile.skills || [], 'green', SUGGESTIONS.skills);
-            setupChipInput('target-companies-chip-input', profile.target_companies || [], 'purple', SUGGESTIONS.companies);
-            setupChipInput('must-have-keywords-chip-input', profile.must_have_keywords || [], 'red', SUGGESTIONS.keywords);
-            setupChipInput('nice-to-have-keywords-chip-input', profile.nice_to_have_keywords || [], 'yellow', SUGGESTIONS.keywords);
-        });
+        setupChipInput('target-titles-chip-input', profile.target_titles || [], 'blue', SUGGESTIONS.jobTitles);
+        setupChipInput('skills-chip-input', profile.skills || [], 'green', SUGGESTIONS.skills);
+        setupChipInput('target-companies-chip-input', profile.target_companies || [], 'purple', SUGGESTIONS.companies);
+        setupChipInput('must-have-keywords-chip-input', profile.must_have_keywords || [], 'red', SUGGESTIONS.keywords);
+        setupChipInput('nice-to-have-keywords-chip-input', profile.nice_to_have_keywords || [], 'yellow', SUGGESTIONS.keywords);
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
