@@ -143,11 +143,23 @@ const settingsPage = {
                 </div>
 
                 <div class="mt-2">
-                    ${field('Target Titles', (profile.target_titles || []).map(t => `<span class="badge badge-neutral mr-1">${components.escapeHtml(t)}</span>`).join(''))}
+                    ${field('Target Titles', (profile.target_titles || []).map(t => `<span class="chip chip-blue">${components.escapeHtml(t)}</span>`).join(' '))}
                 </div>
 
                 <div class="mt-2">
-                    ${field('Skills', (profile.skills || []).map(s => `<span class="badge badge-info mr-1">${components.escapeHtml(s)}</span>`).join(''))}
+                    ${field('Skills', (profile.skills || []).map(s => `<span class="chip chip-green">${components.escapeHtml(s)}</span>`).join(' '))}
+                </div>
+
+                <div class="mt-2">
+                    ${field('Target Companies', (profile.target_companies || []).map(c => `<span class="chip chip-purple">${components.escapeHtml(c)}</span>`).join(' '))}
+                </div>
+
+                <div class="mt-2">
+                    ${field('Must-Have Keywords', (profile.must_have_keywords || []).map(k => `<span class="chip chip-red">${components.escapeHtml(k)}</span>`).join(' '))}
+                </div>
+
+                <div class="mt-2">
+                    ${field('Nice-to-Have Keywords', (profile.nice_to_have_keywords || []).map(k => `<span class="chip chip-yellow">${components.escapeHtml(k)}</span>`).join(' '))}
                 </div>
 
                 <div class="mt-2">
@@ -224,18 +236,27 @@ const settingsPage = {
 
                 <div class="form-group">
                     <label class="form-label">Target Job Titles</label>
-                    <input type="text" class="form-input" name="target_titles"
-                        value="${(profile.target_titles || []).join(', ')}"
-                        placeholder="e.g., Product Manager, Senior PM">
-                    <small class="text-muted">Separate with commas</small>
+                    <div id="target-titles-chip-input"></div>
                 </div>
 
                 <div class="form-group">
                     <label class="form-label">Skills</label>
-                    <input type="text" class="form-input" name="skills"
-                        value="${(profile.skills || []).join(', ')}"
-                        placeholder="e.g., Python, SQL, Product Strategy">
-                    <small class="text-muted">Separate with commas</small>
+                    <div id="skills-chip-input"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Target Companies</label>
+                    <div id="target-companies-chip-input"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Must-Have Keywords</label>
+                    <div id="must-have-keywords-chip-input"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Nice-to-Have Keywords</label>
+                    <div id="nice-to-have-keywords-chip-input"></div>
                 </div>
 
                 <div class="form-group">
@@ -449,12 +470,31 @@ const settingsPage = {
         const form = document.getElementById('profileForm');
         if (!form) return;
 
+        // Get current profile data from the last API call
+        api.getProfile().then(profile => {
+            // Setup chip inputs
+            const setupChipInput = (id, items, color, suggestions) => {
+                const container = document.getElementById(id);
+                if (!container) return;
+
+                const chipInput = components.chipInput(id.replace('-chip-input', ''), items, color, suggestions);
+                container.innerHTML = chipInput.html;
+                chipInput.setup();
+            };
+
+            setupChipInput('target-titles-chip-input', profile.target_titles || [], 'blue', SUGGESTIONS.jobTitles);
+            setupChipInput('skills-chip-input', profile.skills || [], 'green', SUGGESTIONS.skills);
+            setupChipInput('target-companies-chip-input', profile.target_companies || [], 'purple', SUGGESTIONS.companies);
+            setupChipInput('must-have-keywords-chip-input', profile.must_have_keywords || [], 'red', SUGGESTIONS.keywords);
+            setupChipInput('nice-to-have-keywords-chip-input', profile.nice_to_have_keywords || [], 'yellow', SUGGESTIONS.keywords);
+        });
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const saveBtn = document.getElementById('saveProfileBtn');
             const originalBtnText = saveBtn.textContent;
-            
+
             // UI: Loading state
             saveBtn.disabled = true;
             saveBtn.innerHTML = '<div class="spinner spinner-sm"></div> Saving...';
@@ -470,24 +510,27 @@ const settingsPage = {
                 linkedin_password: formData.get('linkedin_password') || null,
                 portfolio_url: formData.get('portfolio_url'),
                 current_title: formData.get('current_title'),
-                target_titles: formData.get('target_titles')?.split(',').map(t => t.trim()).filter(Boolean),
-                skills: formData.get('skills')?.split(',').map(s => s.trim()).filter(Boolean),
+                target_titles: window.chipInputs['target-titles']?.getItems() || [],
+                skills: window.chipInputs['skills']?.getItems() || [],
+                target_companies: window.chipInputs['target-companies']?.getItems() || [],
+                must_have_keywords: window.chipInputs['must-have-keywords']?.getItems() || [],
+                nice_to_have_keywords: window.chipInputs['nice-to-have-keywords']?.getItems() || [],
                 experience_summary: formData.get('experience_summary')
             };
 
             try {
                 // Save and get updated profile
                 const updatedProfile = await api.updateProfile(data);
-                
+
                 components.notify('Profile saved successfully!', 'success');
-                
+
                 // UX: Switch back to view mode with updated data
                 const settingsContent = document.getElementById('settingsContent');
                 settingsContent.innerHTML = this.renderProfileTab(updatedProfile, 'view');
-                
+
             } catch (error) {
                 components.notify(`Error saving profile: ${error.message}`, 'error');
-                
+
                 // UI: Reset button state on error
                 saveBtn.disabled = false;
                 saveBtn.textContent = originalBtnText;

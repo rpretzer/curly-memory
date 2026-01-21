@@ -152,8 +152,6 @@ const components = {
      * Render search form
      */
     searchForm(profile = {}) {
-        const titles = (profile.target_titles || []).join(', ');
-        const keywords = (profile.must_have_keywords || []).join(', ');
         const salaryMin = profile.salary_min || '';
         const isRemote = profile.remote_preference === 'remote';
 
@@ -165,17 +163,13 @@ const components = {
 
                 <div class="form-group">
                     <label class="form-label">Job Titles</label>
-                    <input type="text" class="form-input" name="titles"
-                        value="${this.escapeHtml(titles)}"
-                        placeholder="e.g., Product Manager, Senior PM" required>
-                    <small class="text-muted">Separate multiple titles with commas</small>
+                    <div id="search-titles-chip-input"></div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Locations</label>
-                        <input type="text" class="form-input" name="locations"
-                            placeholder="e.g., Remote, New York, San Francisco">
+                        <div id="search-locations-chip-input"></div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Min Salary</label>
@@ -188,9 +182,7 @@ const components = {
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Keywords</label>
-                        <input type="text" class="form-input" name="keywords"
-                            value="${this.escapeHtml(keywords)}"
-                            placeholder="e.g., AI, Machine Learning, Analytics">
+                        <div id="search-keywords-chip-input"></div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Max Results</label>
@@ -276,6 +268,259 @@ const components = {
      */
     loading() {
         return '<div class="loading"><div class="spinner"></div></div>';
+    },
+
+    /**
+     * Render a chip (removable pill)
+     */
+    chip(text, color = 'blue', onRemove = null) {
+        const removeBtn = onRemove
+            ? `<button class="chip-remove" onclick="${onRemove}" aria-label="Remove ${this.escapeHtml(text)}">×</button>`
+            : '';
+        return `
+            <span class="chip chip-${color}">
+                ${this.escapeHtml(text)}
+                ${removeBtn}
+            </span>
+        `;
+    },
+
+    /**
+     * Render chip container with multiple chips
+     */
+    chipContainer(items, color = 'blue', removeCallback = null) {
+        if (!items || items.length === 0) {
+            return '<div class="chip-container"></div>';
+        }
+
+        const chips = items.map((item, idx) => {
+            const onRemove = removeCallback ? `${removeCallback}(${idx})` : null;
+            return this.chip(item, color, onRemove);
+        }).join('');
+
+        return `<div class="chip-container">${chips}</div>`;
+    },
+
+    /**
+     * Create a typeahead input with suggestions
+     * This returns an object with setup method to be called after DOM render
+     */
+    createTypeahead(inputId, suggestions = [], onSelect = null) {
+        return {
+            inputId,
+            suggestions,
+            onSelect,
+            filteredSuggestions: [],
+            activeIndex: -1,
+            suggestionsId: `${inputId}-suggestions`,
+
+            setup() {
+                const input = document.getElementById(this.inputId);
+                if (!input) return;
+
+                // Wrap input in typeahead wrapper if not already wrapped
+                if (!input.parentElement.classList.contains('typeahead-wrapper')) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'typeahead-wrapper';
+                    input.parentNode.insertBefore(wrapper, input);
+                    wrapper.appendChild(input);
+                }
+
+                const wrapper = input.parentElement;
+
+                // Create suggestions dropdown
+                const suggestionsEl = document.createElement('div');
+                suggestionsEl.id = this.suggestionsId;
+                suggestionsEl.className = 'typeahead-suggestions';
+                suggestionsEl.style.display = 'none';
+                wrapper.appendChild(suggestionsEl);
+
+                // Input event handler
+                input.addEventListener('input', (e) => {
+                    const value = e.target.value.toLowerCase();
+                    if (value.length === 0) {
+                        this.hideSuggestions();
+                        return;
+                    }
+
+                    this.filteredSuggestions = this.suggestions.filter(s =>
+                        s.toLowerCase().includes(value)
+                    ).slice(0, 10);
+
+                    if (this.filteredSuggestions.length > 0) {
+                        this.showSuggestions();
+                    } else {
+                        this.hideSuggestions();
+                    }
+                });
+
+                // Keyboard navigation
+                input.addEventListener('keydown', (e) => {
+                    if (!suggestionsEl.style.display || suggestionsEl.style.display === 'none') return;
+
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        this.activeIndex = Math.min(this.activeIndex + 1, this.filteredSuggestions.length - 1);
+                        this.updateActiveSuggestion();
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        this.activeIndex = Math.max(this.activeIndex - 1, -1);
+                        this.updateActiveSuggestion();
+                    } else if (e.key === 'Enter' && this.activeIndex >= 0) {
+                        e.preventDefault();
+                        this.selectSuggestion(this.filteredSuggestions[this.activeIndex]);
+                    } else if (e.key === 'Escape') {
+                        this.hideSuggestions();
+                    }
+                });
+
+                // Click outside to close
+                document.addEventListener('click', (e) => {
+                    if (!wrapper.contains(e.target)) {
+                        this.hideSuggestions();
+                    }
+                });
+            },
+
+            showSuggestions() {
+                const suggestionsEl = document.getElementById(this.suggestionsId);
+                if (!suggestionsEl) return;
+
+                suggestionsEl.innerHTML = this.filteredSuggestions.map((suggestion, idx) =>
+                    `<div class="typeahead-suggestion" data-index="${idx}">${components.escapeHtml(suggestion)}</div>`
+                ).join('');
+
+                suggestionsEl.style.display = 'block';
+                this.activeIndex = -1;
+
+                // Add click handlers
+                suggestionsEl.querySelectorAll('.typeahead-suggestion').forEach((el, idx) => {
+                    el.addEventListener('click', () => {
+                        this.selectSuggestion(this.filteredSuggestions[idx]);
+                    });
+                });
+            },
+
+            hideSuggestions() {
+                const suggestionsEl = document.getElementById(this.suggestionsId);
+                if (suggestionsEl) {
+                    suggestionsEl.style.display = 'none';
+                }
+                this.activeIndex = -1;
+            },
+
+            updateActiveSuggestion() {
+                const suggestionsEl = document.getElementById(this.suggestionsId);
+                if (!suggestionsEl) return;
+
+                suggestionsEl.querySelectorAll('.typeahead-suggestion').forEach((el, idx) => {
+                    el.classList.toggle('active', idx === this.activeIndex);
+                });
+            },
+
+            selectSuggestion(value) {
+                const input = document.getElementById(this.inputId);
+                if (input) {
+                    input.value = value;
+                }
+                this.hideSuggestions();
+                if (this.onSelect) {
+                    this.onSelect(value);
+                }
+            }
+        };
+    },
+
+    /**
+     * Render chip input field with typeahead
+     * Returns HTML + setup function
+     */
+    chipInput(id, items = [], color = 'blue', suggestions = [], addButtonColor = 'primary') {
+        const inputId = `${id}-input`;
+        const containerId = `${id}-container`;
+        const buttonId = `${id}-add-btn`;
+
+        return {
+            html: `
+                <div class="chip-container" id="${containerId}">
+                    ${items.map((item, idx) => this.chip(item, color, `window.chipInputs['${id}'].remove(${idx})`)).join('')}
+                </div>
+                <div class="input-group">
+                    <input
+                        type="text"
+                        id="${inputId}"
+                        class="form-input"
+                        placeholder="Type to add..."
+                    />
+                    <button type="button" id="${buttonId}" class="btn btn-${addButtonColor}">Add</button>
+                </div>
+            `,
+
+            setup() {
+                const inputEl = document.getElementById(inputId);
+                const buttonEl = document.getElementById(buttonId);
+                const containerEl = document.getElementById(containerId);
+
+                if (!window.chipInputs) window.chipInputs = {};
+
+                const chipInput = {
+                    items: [...items],
+
+                    add(value) {
+                        if (!value || value.trim() === '') return;
+                        const trimmed = value.trim();
+                        if (this.items.includes(trimmed)) return;
+
+                        this.items.push(trimmed);
+                        this.render();
+                        if (inputEl) inputEl.value = '';
+                    },
+
+                    remove(index) {
+                        this.items.splice(index, 1);
+                        this.render();
+                    },
+
+                    render() {
+                        if (!containerEl) return;
+                        containerEl.innerHTML = this.items.map((item, idx) =>
+                            components.chip(item, color, `window.chipInputs['${id}'].remove(${idx})`)
+                        ).join('');
+                    },
+
+                    getItems() {
+                        return this.items;
+                    }
+                };
+
+                window.chipInputs[id] = chipInput;
+
+                // Add button handler
+                if (buttonEl && inputEl) {
+                    buttonEl.addEventListener('click', () => {
+                        chipInput.add(inputEl.value);
+                    });
+                }
+
+                // Enter key handler
+                if (inputEl) {
+                    inputEl.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            chipInput.add(inputEl.value);
+                        }
+                    });
+                }
+
+                // Setup typeahead if suggestions provided
+                if (suggestions.length > 0) {
+                    const typeahead = this.createTypeahead(inputId, suggestions, (value) => {
+                        chipInput.add(value);
+                    });
+                    typeahead.setup();
+                }
+            }
+        };
     }
 };
 

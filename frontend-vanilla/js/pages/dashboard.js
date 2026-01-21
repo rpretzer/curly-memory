@@ -78,6 +78,22 @@ const dashboardPage = {
         const form = document.getElementById('searchForm');
         if (!form) return;
 
+        // Setup chip inputs
+        api.getProfile().then(profile => {
+            const setupChipInput = (id, items, color, suggestions) => {
+                const container = document.getElementById(id);
+                if (!container) return;
+
+                const chipInput = components.chipInput(id.replace('-chip-input', ''), items, color, suggestions, 'primary');
+                container.innerHTML = chipInput.html;
+                chipInput.setup();
+            };
+
+            setupChipInput('search-titles-chip-input', profile.target_titles || ['Product Manager'], 'blue', SUGGESTIONS.jobTitles);
+            setupChipInput('search-locations-chip-input', ['Remote, US'], 'green', SUGGESTIONS.locations);
+            setupChipInput('search-keywords-chip-input', profile.must_have_keywords || [], 'purple', SUGGESTIONS.keywords);
+        });
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
@@ -90,13 +106,16 @@ const dashboardPage = {
                 sources.push(cb.value);
             });
 
+            // Get chip input values
+            const titles = window.chipInputs['search-titles']?.getItems() || [];
+            const locations = window.chipInputs['search-locations']?.getItems() || [];
+            const keywords = window.chipInputs['search-keywords']?.getItems() || [];
+
             // Construct the payload matching RunRequest model
             const searchConfig = {
-                titles: formData.get('titles').split(',').map(t => t.trim()).filter(Boolean),
-                locations: formData.get('locations') ?
-                    formData.get('locations').split(',').map(l => l.trim()).filter(Boolean) : null,
-                keywords: formData.get('keywords') ?
-                    formData.get('keywords').split(',').map(k => k.trim()).filter(Boolean) : null,
+                titles: titles.length > 0 ? titles : null,
+                locations: locations.length > 0 ? locations : null,
+                keywords: keywords.length > 0 ? keywords : null,
                 remote: formData.get('remote') === 'on',
                 sources: sources.length > 0 ? sources : null,
                 max_results: parseInt(formData.get('max_results')) || 50
@@ -106,7 +125,7 @@ const dashboardPage = {
                 search: searchConfig,
                 salary_min: formData.get('salary_min') ? parseInt(formData.get('salary_min')) : null,
                 // Default values for other fields
-                remote_preference: 'any', 
+                remote_preference: 'any',
                 generate_content: true,
                 auto_apply: false
             };
