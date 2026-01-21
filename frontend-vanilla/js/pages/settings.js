@@ -89,6 +89,10 @@ const settingsPage = {
             api.getProfile().then(profile => {
                 settingsContent.innerHTML = this.renderResumeTab(profile);
                 this.attachResumeHandler();
+            }).catch(error => {
+                console.error('Error loading resume tab:', error);
+                settingsContent.innerHTML = this.renderResumeTab({});
+                this.attachResumeHandler();
             });
         }
     },
@@ -503,7 +507,7 @@ const settingsPage = {
         `;
     },
 
-    renderResumeTab(profile) {
+    renderResumeTab(profile = {}) {
         return `
             <div class="card">
                 <div class="card-header">
@@ -511,7 +515,7 @@ const settingsPage = {
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Upload Resume (PDF)</label>
+                    <label class="form-label">Upload Resume (PDF, DOC, DOCX)</label>
                     <input type="file" id="resumeFile" accept=".pdf,.doc,.docx"
                         class="form-input" style="padding: 0.5rem;">
                 </div>
@@ -520,20 +524,24 @@ const settingsPage = {
                     Upload Resume
                 </button>
 
-                ${profile.resume_file_path ? `
+                ${profile && profile.resume_file_path ? `
                     <div class="mt-2">
-                        <p class="text-muted">Current resume: ${profile.resume_file_path.split('/').pop()}</p>
+                        <p class="text-muted">Current resume: ${components.escapeHtml(profile.resume_file_path.split('/').pop())}</p>
                     </div>
                 ` : ''}
 
-                ${profile.resume_text ? `
+                ${profile && profile.resume_text ? `
                     <div class="card mt-2" style="background: var(--bg-tertiary);">
                         <div class="card-header">
                             <h4 class="card-title">Extracted Text</h4>
                         </div>
                         <pre style="white-space: pre-wrap; font-size: 0.875rem; color: var(--text-secondary); max-height: 300px; overflow-y: auto;">${components.escapeHtml(profile.resume_text)}</pre>
                     </div>
-                ` : ''}
+                ` : `
+                    <div class="card mt-2 p-3" style="background: var(--bg-tertiary);">
+                        <p class="text-muted text-center">No resume uploaded yet. Upload a resume to enable auto-apply features.</p>
+                    </div>
+                `}
             </div>
         `;
     },
