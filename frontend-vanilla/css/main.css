@@ -134,6 +134,7 @@ body {
 /* Forms */
 .form-group {
     margin-bottom: 1.25rem;
+    min-width: 0; /* Allow grid items to shrink below content size */
 }
 
 .form-label {
@@ -174,7 +175,7 @@ body {
 
 .form-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
 }
 
@@ -400,14 +401,18 @@ tr:hover td {
 .input-group {
     display: flex;
     gap: 0.5rem;
+    width: 100%;
+    max-width: 100%;
 }
 
 .input-group .form-input {
     flex: 1;
+    min-width: 0; /* Prevent flex item from overflowing */
 }
 
 .input-group .btn {
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 /* Score Badge */
