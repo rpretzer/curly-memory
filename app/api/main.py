@@ -92,7 +92,18 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database...")
     init_db()
     logger.info("Database initialized")
-    
+
+    # Recover stuck runs from previous crashes
+    try:
+        from app.recovery import recover_stuck_runs
+        from app.db import get_db_context
+        with get_db_context() as db:
+            recovered = recover_stuck_runs(db)
+            if recovered > 0:
+                logger.warning(f"Recovered {recovered} stuck runs on startup")
+    except Exception as e:
+        logger.error(f"Error recovering stuck runs: {e}", exc_info=True)
+
     # Start scheduler if enabled (single worker only)
     scheduler_lock = Path("scheduler.lock")
     scheduler_started = False

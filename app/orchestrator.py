@@ -412,7 +412,7 @@ class PipelineOrchestrator:
     ) -> Dict[str, Any]:
         """
         Run the full pipeline: search, score, generate content, and optionally apply.
-        
+
         Args:
             run_id: Run ID
             titles: Job titles
@@ -428,105 +428,121 @@ class PipelineOrchestrator:
             salary_min: Optional salary minimum
             generate_content: Whether to generate content
             auto_apply: Whether to auto-apply (still requires approval)
-            
+
         Returns:
             Dictionary with results summary
         """
-        # Run search and score
-        job_ids = self.run_search_and_score(
-            run_id=run_id,
-            titles=titles,
-            locations=locations,
-            remote=remote,
-            keywords=keywords,
-            sources=sources,
-            max_results=max_results,
-            target_companies=target_companies,
-            must_have_keywords=must_have_keywords,
-            nice_to_have_keywords=nice_to_have_keywords,
-            remote_preference=remote_preference,
-            salary_min=salary_min,
-        )
-        
-        run = self.db.query(Run).filter(Run.id == run_id).first()
-        
-        # Generate content if requested
-        if generate_content:
-            run.status = RunStatus.CONTENT_GENERATING
-            self.db.commit()
-            
-            from app.models import Job
-            jobs = self.db.query(Job).filter(Job.id.in_(job_ids)).all()
-            
-            for job in jobs:
-                try:
-                    self.content_agent.generate_all_content(job, run_id=run_id)
-                except Exception as e:
-                    logger.error(f"Error generating content for job {job.id}: {e}", exc_info=True)
-                    self.log_agent.log_error(
-                        agent_name="Orchestrator",
-                        error=e,
-                        run_id=run_id,
-                        job_id=job.id,
-                        step="generate_content",
-                    )
-        
-        # Auto-apply only if enabled and jobs are approved
-        if auto_apply:
-            run.status = RunStatus.APPLYING
-            self.db.commit()
-            
-            self.log_agent.log(
-                agent_name="Orchestrator",
-                status="info",
-                message="Starting auto-apply phase",
+        try:
+            # Run search and score
+            job_ids = self.run_search_and_score(
                 run_id=run_id,
-                step="start_apply"
+                titles=titles,
+                locations=locations,
+                remote=remote,
+                keywords=keywords,
+                sources=sources,
+                max_results=max_results,
+                target_companies=target_companies,
+                must_have_keywords=must_have_keywords,
+                nice_to_have_keywords=nice_to_have_keywords,
+                remote_preference=remote_preference,
+                salary_min=salary_min,
             )
-            
-            from app.models import Job
-            approved_jobs = self.db.query(Job).filter(
-                Job.id.in_(job_ids),
-                Job.approved == True,
-            ).all()
-            
-            applied_count = 0
-            failed_count = 0
-            
-            for job in approved_jobs:
-                try:
-                    success = self.apply_agent.apply_to_job(
-                        job,
-                        run_id=run_id,
-                        human_approval_required=True,  # Always require approval flag
-                    )
-                    if success:
-                        applied_count += 1
-                    else:
+
+            run = self.db.query(Run).filter(Run.id == run_id).first()
+
+            # Generate content if requested
+            if generate_content:
+                run.status = RunStatus.CONTENT_GENERATING
+                self.db.commit()
+
+                from app.models import Job
+                jobs = self.db.query(Job).filter(Job.id.in_(job_ids)).all()
+
+                for job in jobs:
+                    try:
+                        self.content_agent.generate_all_content(job, run_id=run_id)
+                    except Exception as e:
+                        logger.error(f"Error generating content for job {job.id}: {e}", exc_info=True)
+                        self.log_agent.log_error(
+                            agent_name="Orchestrator",
+                            error=e,
+                            run_id=run_id,
+                            job_id=job.id,
+                            step="generate_content",
+                        )
+
+            # Auto-apply only if enabled and jobs are approved
+            if auto_apply:
+                run.status = RunStatus.APPLYING
+                self.db.commit()
+
+                self.log_agent.log(
+                    agent_name="Orchestrator",
+                    status="info",
+                    message="Starting auto-apply phase",
+                    run_id=run_id,
+                    step="start_apply"
+                )
+
+                from app.models import Job
+                approved_jobs = self.db.query(Job).filter(
+                    Job.id.in_(job_ids),
+                    Job.approved == True,
+                ).all()
+
+                applied_count = 0
+                failed_count = 0
+
+                for job in approved_jobs:
+                    try:
+                        success = self.apply_agent.apply_to_job(
+                            job,
+                            run_id=run_id,
+                            human_approval_required=True,  # Always require approval flag
+                        )
+                        if success:
+                            applied_count += 1
+                        else:
+                            failed_count += 1
+                    except Exception as e:
+                        logger.error(f"Error applying to job {job.id}: {e}", exc_info=True)
+                        self.log_agent.log_error(
+                            agent_name="Orchestrator",
+                            error=e,
+                            run_id=run_id,
+                            job_id=job.id,
+                            step="batch_apply_job"
+                        )
                         failed_count += 1
-                except Exception as e:
-                    logger.error(f"Error applying to job {job.id}: {e}", exc_info=True)
-                    self.log_agent.log_error(
-                        agent_name="Orchestrator",
-                        error=e,
-                        run_id=run_id,
-                        job_id=job.id,
-                        step="batch_apply_job"
+
+                run.jobs_applied = applied_count
+                run.jobs_failed = failed_count
+
+            run.status = RunStatus.COMPLETED
+            run.completed_at = datetime.utcnow()
+            self.db.commit()
+
+            return {
+                "run_id": run_id,
+                "jobs_found": run.jobs_found,
+                "jobs_scored": run.jobs_scored,
+                "jobs_above_threshold": run.jobs_above_threshold,
+                "jobs_applied": run.jobs_applied,
+                "jobs_failed": run.jobs_failed,
+            }
+
+        finally:
+            # CRITICAL: Always finalize run status, even if process crashes
+            try:
+                run = self.db.query(Run).filter(Run.id == run_id).first()
+                if run and run.status not in [RunStatus.COMPLETED, RunStatus.FAILED]:
+                    logger.warning(
+                        f"Run {run_id} finalized in finally block "
+                        f"(previous status: {run.status})"
                     )
-                    failed_count += 1
-            
-            run.jobs_applied = applied_count
-            run.jobs_failed = failed_count
-        
-        run.status = RunStatus.COMPLETED
-        run.completed_at = datetime.utcnow()
-        self.db.commit()
-        
-        return {
-            "run_id": run_id,
-            "jobs_found": run.jobs_found,
-            "jobs_scored": run.jobs_scored,
-            "jobs_above_threshold": run.jobs_above_threshold,
-            "jobs_applied": run.jobs_applied,
-            "jobs_failed": run.jobs_failed,
-        }
+                    run.status = RunStatus.COMPLETED
+                    run.completed_at = datetime.utcnow()
+                    self.db.commit()
+            except Exception as e:
+                logger.error(f"Error in finally block for run {run_id}: {e}", exc_info=True)

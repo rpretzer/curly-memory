@@ -484,24 +484,39 @@ Provide a direct, professional answer that demonstrates relevant experience.
         self,
         job: Job,
         run_id: Optional[int] = None,
-        skip_existing: bool = True
+        skip_existing: bool = True,
+        max_retries: Optional[int] = None,
     ) -> Job:
         """
         Generate all content for a job and update the job record.
-        
+
         Args:
             job: Job to generate content for
             run_id: Optional run ID for logging
             skip_existing: If True, skip generating content that already exists (efficiency)
-            
+            max_retries: Max retry attempts for transient failures (default from config)
+
         Returns:
             Updated Job model
         """
         logger.info(f"Generating content for job: {job.id} - {job.title}")
-        
+
+        # Get retry config
+        if max_retries is None:
+            try:
+                from app.config import config
+                content_config = config.get_config().get("pipeline", {}).get("content_generation", {})
+                max_retries = content_config.get("max_retries", 2)
+                retry_delay = content_config.get("retry_delay_seconds", 5)
+            except Exception:
+                max_retries = 2
+                retry_delay = 5
+        else:
+            retry_delay = 5
+
         errors = []
         content_generated = False
-        
+
         # Check if LLM is available
         if not self.llm:
             error_msg = f"LLM not initialized (provider: {self.llm_provider})"
@@ -517,67 +532,94 @@ Provide a direct, professional answer that demonstrates relevant experience.
             job.application_error = error_msg
             self.db.commit()
             return job
-        
+
         # Generate summary (skip if already exists and skip_existing is True)
         if not skip_existing or not job.llm_summary:
-            try:
-                logger.debug(f"Generating summary for job {job.id} (existing: {bool(job.llm_summary)})")
-                job.llm_summary = self.generate_summary(job, run_id)
-                content_generated = True
-            except Exception as e:
-                logger.error(f"Error generating summary for job {job.id}: {e}", exc_info=True)
-                errors.append(f"Summary generation failed: {str(e)}")
-                if self.log_agent and run_id:
-                    self.log_agent.log_error(
-                        agent_name=self.agent_name,
-                        error=e,
-                        run_id=run_id,
-                        job_id=job.id,
-                        step="generate_summary",
-                    )
+            for attempt in range(max_retries + 1):
+                try:
+                    logger.debug(f"Generating summary for job {job.id} (attempt {attempt + 1}/{max_retries + 1})")
+                    job.llm_summary = self.generate_summary(job, run_id)
+                    content_generated = True
+                    break  # Success
+                except Exception as e:
+                    if attempt < max_retries and self._is_retryable_error(e):
+                        wait_time = retry_delay * (2 ** attempt)
+                        logger.warning(f"Retry {attempt + 1}/{max_retries} for summary (job {job.id}): {e}. Waiting {wait_time}s...")
+                        import time
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(f"Error generating summary for job {job.id} after {attempt + 1} attempts: {e}", exc_info=True)
+                        errors.append(f"Summary generation failed: {str(e)[:100]}")
+                        if self.log_agent and run_id:
+                            self.log_agent.log_error(
+                                agent_name=self.agent_name,
+                                error=e,
+                                run_id=run_id,
+                                job_id=job.id,
+                                step="generate_summary",
+                            )
+                        break
         else:
             logger.debug(f"Skipping summary generation for job {job.id} (already exists)")
-        
+
         # Generate resume points (skip if already exists)
         if not skip_existing or not job.tailored_resume_points:
-            try:
-                logger.debug(f"Generating resume points for job {job.id} (existing: {bool(job.tailored_resume_points)})")
-                job.tailored_resume_points = self.generate_resume_points(job, run_id)
-                content_generated = True
-            except Exception as e:
-                logger.error(f"Error generating resume points for job {job.id}: {e}", exc_info=True)
-                errors.append(f"Resume points generation failed: {str(e)}")
-                if self.log_agent and run_id:
-                    self.log_agent.log_error(
-                        agent_name=self.agent_name,
-                        error=e,
-                        run_id=run_id,
-                        job_id=job.id,
-                        step="generate_resume_points",
-                    )
+            for attempt in range(max_retries + 1):
+                try:
+                    logger.debug(f"Generating resume points for job {job.id} (attempt {attempt + 1}/{max_retries + 1})")
+                    job.tailored_resume_points = self.generate_resume_points(job, run_id)
+                    content_generated = True
+                    break  # Success
+                except Exception as e:
+                    if attempt < max_retries and self._is_retryable_error(e):
+                        wait_time = retry_delay * (2 ** attempt)
+                        logger.warning(f"Retry {attempt + 1}/{max_retries} for resume points (job {job.id}): {e}. Waiting {wait_time}s...")
+                        import time
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(f"Error generating resume points for job {job.id} after {attempt + 1} attempts: {e}", exc_info=True)
+                        errors.append(f"Resume points generation failed: {str(e)[:100]}")
+                        if self.log_agent and run_id:
+                            self.log_agent.log_error(
+                                agent_name=self.agent_name,
+                                error=e,
+                                run_id=run_id,
+                                job_id=job.id,
+                                step="generate_resume_points",
+                            )
+                        break
         else:
             logger.debug(f"Skipping resume points generation for job {job.id} (already exists)")
-        
+
         # Generate cover letter (skip if already exists)
         if not skip_existing or not job.cover_letter_draft:
-            try:
-                logger.debug(f"Generating cover letter for job {job.id} (existing: {bool(job.cover_letter_draft)})")
-                job.cover_letter_draft = self.generate_cover_letter(job, run_id)
-                content_generated = True
-            except Exception as e:
-                logger.error(f"Error generating cover letter for job {job.id}: {e}", exc_info=True)
-                errors.append(f"Cover letter generation failed: {str(e)}")
-                if self.log_agent and run_id:
-                    self.log_agent.log_error(
-                        agent_name=self.agent_name,
-                        error=e,
-                        run_id=run_id,
-                        job_id=job.id,
-                        step="generate_cover_letter",
-                    )
+            for attempt in range(max_retries + 1):
+                try:
+                    logger.debug(f"Generating cover letter for job {job.id} (attempt {attempt + 1}/{max_retries + 1})")
+                    job.cover_letter_draft = self.generate_cover_letter(job, run_id)
+                    content_generated = True
+                    break  # Success
+                except Exception as e:
+                    if attempt < max_retries and self._is_retryable_error(e):
+                        wait_time = retry_delay * (2 ** attempt)
+                        logger.warning(f"Retry {attempt + 1}/{max_retries} for cover letter (job {job.id}): {e}. Waiting {wait_time}s...")
+                        import time
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(f"Error generating cover letter for job {job.id} after {attempt + 1} attempts: {e}", exc_info=True)
+                        errors.append(f"Cover letter generation failed: {str(e)[:100]}")
+                        if self.log_agent and run_id:
+                            self.log_agent.log_error(
+                                agent_name=self.agent_name,
+                                error=e,
+                                run_id=run_id,
+                                job_id=job.id,
+                                step="generate_cover_letter",
+                            )
+                        break
         else:
             logger.debug(f"Skipping cover letter generation for job {job.id} (already exists)")
-        
+
         # Update status - mark as generated (even if some parts failed, we have content)
         from app.models import JobStatus
         job.status = JobStatus.CONTENT_GENERATED
@@ -586,8 +628,31 @@ Provide a direct, professional answer that demonstrates relevant experience.
             job.application_error = "; ".join(errors)
         else:
             job.application_error = None
-        
+
         self.db.commit()
         self.db.refresh(job)
-        
+
         return job
+
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """
+        Check if error is transient and worth retrying.
+
+        Args:
+            error: Exception to check
+
+        Returns:
+            True if error appears to be transient
+        """
+        error_str = str(error).lower()
+        retryable_keywords = [
+            'timeout',
+            'rate limit',
+            'connection',
+            'temporary',
+            'unavailable',
+            'overloaded',
+            '429',  # HTTP 429 Too Many Requests
+            '503',  # HTTP 503 Service Unavailable
+        ]
+        return any(keyword in error_str for keyword in retryable_keywords)

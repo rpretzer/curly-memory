@@ -129,6 +129,14 @@ job_sources:
       - ["okta", "wd1", "Okta", "Okta"]
       - ["crowdstrike", "wd5", "crowdstrikecareers", "CrowdStrike"]
       - ["docusign", "wd5", "External", "DocuSign"]
+pipeline:
+  recovery:
+    enabled: true
+    timeout_minutes: 120  # How long before run considered stuck
+  content_generation:
+    max_retries: 2  # Number of retry attempts for transient failures
+    retry_delay_seconds: 5  # Base delay between retries (exponential backoff)
+
 features:
   enable_playwright: true
   enable_auto_apply: false
