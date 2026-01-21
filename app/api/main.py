@@ -243,6 +243,7 @@ class RunResponse(BaseModel):
     jobs_found: int = 0
     jobs_scored: int = 0
     jobs_above_threshold: int = 0
+    jobs_approved: int = 0
     jobs_applied: int = 0
     jobs_failed: int = 0
 
@@ -457,6 +458,7 @@ async def list_runs(
             jobs_found=run.jobs_found,
             jobs_scored=run.jobs_scored,
             jobs_above_threshold=run.jobs_above_threshold,
+            jobs_approved=run.jobs_approved,
             jobs_applied=run.jobs_applied,
             jobs_failed=run.jobs_failed,
         )
@@ -495,6 +497,7 @@ async def get_run(run_id: int, db: Session = Depends(get_db)):
         jobs_found=run.jobs_found,
         jobs_scored=run.jobs_scored,
         jobs_above_threshold=run.jobs_above_threshold,
+        jobs_approved=run.jobs_approved,
         jobs_applied=run.jobs_applied,
         jobs_failed=run.jobs_failed,
     )

@@ -13,12 +13,14 @@ const dashboardPage = {
             api.getProfile().catch(() => ({}))
         ]);
 
-        // Calculate stats
+        // Calculate stats from runs data (not limited jobs)
         const recentRuns = runs.slice(0, 5);
-        const pendingJobs = jobs.filter(j => !j.approved && j.status !== 'rejected');
-        const approvedJobs = jobs.filter(j => j.approved);
-        const appliedJobs = jobs.filter(j => j.status === 'application_completed');
         const totalJobsFound = runs.reduce((sum, r) => sum + (r.jobs_found || 0), 0);
+        const totalJobsApproved = runs.reduce((sum, r) => sum + (r.jobs_approved || 0), 0);
+        const totalJobsApplied = runs.reduce((sum, r) => sum + (r.jobs_applied || 0), 0);
+        const totalJobsScored = runs.reduce((sum, r) => sum + (r.jobs_scored || 0), 0);
+        // Pending = scored but not approved and not applied
+        const pendingCount = Math.max(0, totalJobsScored - totalJobsApproved - totalJobsApplied);
 
         content.innerHTML = `
             <div class="page-header">
@@ -29,9 +31,9 @@ const dashboardPage = {
             <div class="stats-grid">
                 ${components.statCard(runs.length, 'Total Runs', null, "router.navigate('/runs')")}
                 ${components.statCard(totalJobsFound, 'Jobs Found', null, "dashboardPage.goToJobs('all')")}
-                ${components.statCard(pendingJobs.length, 'Pending Review', '#f59e0b', "dashboardPage.goToJobs('pending')")}
-                ${components.statCard(approvedJobs.length, 'Approved', '#22c55e', "dashboardPage.goToJobs('approved')")}
-                ${components.statCard(appliedJobs.length, 'Applied', '#3b82f6', "dashboardPage.goToJobs('applied')")}
+                ${components.statCard(pendingCount, 'Pending Review', '#f59e0b', "dashboardPage.goToJobs('pending')")}
+                ${components.statCard(totalJobsApproved, 'Approved', '#22c55e', "dashboardPage.goToJobs('approved')")}
+                ${components.statCard(totalJobsApplied, 'Applied', '#3b82f6', "dashboardPage.goToJobs('applied')")}
             </div>
 
             ${components.searchForm(profile)}
