@@ -16,12 +16,14 @@ const jobsPage = {
             const pending = jobs.filter(j => !j.approved && j.status !== 'rejected');
             const approved = jobs.filter(j => j.approved);
             const rejected = jobs.filter(j => j.status === 'rejected');
+            const applied = jobs.filter(j => j.status === 'application_completed');
 
             // Filter based on current tab
             let displayJobs = jobs;
             if (this.currentFilter === 'pending') displayJobs = pending;
             else if (this.currentFilter === 'approved') displayJobs = approved;
             else if (this.currentFilter === 'rejected') displayJobs = rejected;
+            else if (this.currentFilter === 'applied') displayJobs = applied;
 
             content.innerHTML = `
                 <div class="page-header flex-between">
@@ -36,6 +38,10 @@ const jobsPage = {
                         <button class="btn btn-sm btn-success" onclick="jobsPage.bulkApprove()"
                             id="bulkApproveBtn" ${this.selectedJobs.size === 0 ? 'disabled' : ''}>
                             Approve Selected (${this.selectedJobs.size})
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="jobsPage.bulkReject()"
+                            id="bulkRejectBtn" ${this.selectedJobs.size === 0 ? 'disabled' : ''}>
+                            Reject Selected (${this.selectedJobs.size})
                         </button>
                     </div>
                 </div>
@@ -52,6 +58,10 @@ const jobsPage = {
                     <button class="tab ${this.currentFilter === 'approved' ? 'active' : ''}"
                         onclick="jobsPage.setFilter('approved')">
                         Approved (${approved.length})
+                    </button>
+                    <button class="tab ${this.currentFilter === 'applied' ? 'active' : ''}"
+                        onclick="jobsPage.setFilter('applied')">
+                        Applied (${applied.length})
                     </button>
                     <button class="tab ${this.currentFilter === 'rejected' ? 'active' : ''}"
                         onclick="jobsPage.setFilter('rejected')">
@@ -126,6 +136,13 @@ const jobsPage = {
             btn.disabled = this.selectedJobs.size === 0;
             btn.textContent = `Approve Selected (${this.selectedJobs.size})`;
         }
+
+        // Update bulk reject button
+        const rejectBtn = document.getElementById('bulkRejectBtn');
+        if (rejectBtn) {
+            rejectBtn.disabled = this.selectedJobs.size === 0;
+            rejectBtn.textContent = `Reject Selected (${this.selectedJobs.size})`;
+        }
     },
 
     async bulkApprove() {
@@ -135,6 +152,22 @@ const jobsPage = {
             const jobIds = Array.from(this.selectedJobs);
             await api.bulkApprove(jobIds);
             components.notify(`Approved ${jobIds.length} jobs`, 'success');
+            this.selectedJobs.clear();
+            this.renderList();
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async bulkReject() {
+        if (this.selectedJobs.size === 0) return;
+
+        const reason = prompt('Rejection reason (optional):');
+        
+        try {
+            const jobIds = Array.from(this.selectedJobs);
+            await api.bulkReject(jobIds, reason);
+            components.notify(`Rejected ${jobIds.length} jobs`, 'success');
             this.selectedJobs.clear();
             this.renderList();
         } catch (error) {
@@ -208,7 +241,7 @@ const jobsPage = {
                             <h3 class="card-title">Description</h3>
                         </div>
                         <div style="white-space: pre-wrap; color: var(--text-secondary);">
-                            ${components.escapeHtml(job.description)}
+                            ${components.renderDescription(job.description)}
                         </div>
                     </div>
                 ` : ''}

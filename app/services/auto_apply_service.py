@@ -229,7 +229,6 @@ class AutoApplyService:
             Job.approved == True,
             Job.status.notin_([
                 JobStatus.APPLICATION_COMPLETED,
-                JobStatus.APPLIED,
                 JobStatus.APPLICATION_FAILED,
             ])
         )
@@ -260,7 +259,6 @@ class AutoApplyService:
             Job.relevance_score >= threshold,
             Job.status.notin_([
                 JobStatus.APPLICATION_COMPLETED,
-                JobStatus.APPLIED,
                 JobStatus.APPLICATION_FAILED,
             ])
         ).all()
@@ -356,7 +354,7 @@ class AutoApplyService:
         if not job.approved:
             return {"status": "error", "message": "Job not approved"}
 
-        if job.status in [JobStatus.APPLICATION_COMPLETED, JobStatus.APPLIED]:
+        if job.status == JobStatus.APPLICATION_COMPLETED:
             return {"status": "error", "message": "Already applied"}
 
         try:

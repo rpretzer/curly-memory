@@ -23,7 +23,16 @@ const api = {
 
             if (!response.ok) {
                 const error = await response.json().catch(() => ({ detail: response.statusText }));
-                throw new Error(error.detail || `HTTP ${response.status}`);
+                let errorMessage = error.detail || `HTTP ${response.status}`;
+                
+                // Handle Pydantic validation errors (array of objects)
+                if (Array.isArray(errorMessage)) {
+                    errorMessage = errorMessage.map(e => `${e.loc.join('.')}: ${e.msg}`).join(', ');
+                } else if (typeof errorMessage === 'object') {
+                    errorMessage = JSON.stringify(errorMessage);
+                }
+                
+                throw new Error(errorMessage);
             }
 
             return await response.json();
@@ -51,6 +60,10 @@ const api = {
             method: 'POST',
             body: JSON.stringify(config)
         });
+    },
+
+    async deleteRuns() {
+        return this.request('/runs', { method: 'DELETE' });
     },
 
     // Jobs
@@ -86,6 +99,13 @@ const api = {
         return this.request('/jobs/bulk-approve', {
             method: 'POST',
             body: JSON.stringify({ job_ids: jobIds })
+        });
+    },
+
+    async bulkReject(jobIds, reason) {
+        return this.request('/jobs/bulk-reject', {
+            method: 'POST',
+            body: JSON.stringify({ job_ids: jobIds, reason })
         });
     },
 

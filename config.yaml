@@ -195,20 +195,6 @@ rag:
     persist_directory: "./vector_store"
 
 content_prompts:
-  resume_summary: 'Generate 3-5 tailored bullet points for a resume based on the job
-    description.
-
-    Focus on matching the job requirements with relevant experience.
-
-    '
-  cover_letter_template: 'Write a professional cover letter for this position.
-
-    Keep it concise (200-300 words) and highlight relevant experience.
-
-    '
-  application_answers: 'Generate concise answers (50-100 words) to common application
-    questions
-
-    based on the job requirements and candidate profile.
-
-    '
+  resume_summary: "Generate 3-5 tailored bullet points for a resume based on the job description.\nFocus on matching the job requirements with relevant experience.\n\nJob Requirements:\n{job_description}\n{similar_jobs_context}\n\nCandidate Profile:\n- Current Title: {current_title}\n- Skills: {skills}\n- Experience: {experience_summary}\n\nGenerate bullet points that:\n1. Match key job requirements\n2. Highlight relevant experience\n3. Use action verbs and quantify achievements when possible\n4. Keep each bullet to 1-2 lines"
+  cover_letter_template: "Write a professional cover letter for this position.\nKeep it concise (200-300 words) and highlight relevant experience.\n\nJob:\nTitle: {job_title}\nCompany: {company}\nDescription: {job_description}\n\nCandidate:\nName: {name}\nCurrent Title: {current_title}\nSkills: {skills}\nExperience Summary: {experience_summary}\n\nWrite a compelling cover letter that:\n1. Expresses genuine interest in the role\n2. Highlights 2-3 most relevant experiences/skills\n3. Shows understanding of the company/role\n4. Ends with a call to action"
+  application_answers: "Generate a concise answer (50-100 words) to this application question\nbased on the job requirements and candidate profile.\n\nQuestion: {question}\n\nJob: {job_title} at {company}\nJob Requirements: {job_description}\n\nCandidate:\nSkills: {skills}\nExperience: {experience_summary}\n\nProvide a direct, professional answer that demonstrates relevant experience."

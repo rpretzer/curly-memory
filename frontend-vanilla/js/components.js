@@ -115,10 +115,10 @@ const components = {
      */
     runCard(run) {
         return `
-            <div class="job-card" onclick="router.navigate('/runs/${run.id}')">
+            <div class="job-card" onclick="router.navigate('/runs/${run.run_id}')">
                 <div class="job-card-header">
                     <div>
-                        <div class="job-title">Run #${run.id}</div>
+                        <div class="job-title">Run #${run.run_id}</div>
                         <div class="job-company">${this.formatDate(run.started_at)}</div>
                     </div>
                     ${this.statusBadge(run.status)}
@@ -136,10 +136,12 @@ const components = {
     /**
      * Render stat card
      */
-    statCard(value, label, color = null) {
+    statCard(value, label, color = null, onClick = null) {
         const style = color ? `color: ${color}` : '';
+        const cursor = onClick ? 'cursor: pointer;' : '';
+        const clickAttr = onClick ? `onclick="${onClick}"` : '';
         return `
-            <div class="stat-card">
+            <div class="stat-card" style="${cursor}" ${clickAttr}>
                 <div class="stat-value" style="${style}">${value}</div>
                 <div class="stat-label">${label}</div>
             </div>
@@ -149,7 +151,12 @@ const components = {
     /**
      * Render search form
      */
-    searchForm() {
+    searchForm(profile = {}) {
+        const titles = (profile.target_titles || []).join(', ');
+        const keywords = (profile.must_have_keywords || []).join(', ');
+        const salaryMin = profile.salary_min || '';
+        const isRemote = profile.remote_preference === 'remote';
+
         return `
             <form id="searchForm" class="card">
                 <div class="card-header">
@@ -159,6 +166,7 @@ const components = {
                 <div class="form-group">
                     <label class="form-label">Job Titles</label>
                     <input type="text" class="form-input" name="titles"
+                        value="${this.escapeHtml(titles)}"
                         placeholder="e.g., Product Manager, Senior PM" required>
                     <small class="text-muted">Separate multiple titles with commas</small>
                 </div>
@@ -172,6 +180,7 @@ const components = {
                     <div class="form-group">
                         <label class="form-label">Min Salary</label>
                         <input type="number" class="form-input" name="salary_min"
+                            value="${salaryMin}"
                             placeholder="e.g., 150000">
                     </div>
                 </div>
@@ -180,6 +189,7 @@ const components = {
                     <div class="form-group">
                         <label class="form-label">Keywords</label>
                         <input type="text" class="form-input" name="keywords"
+                            value="${this.escapeHtml(keywords)}"
                             placeholder="e.g., AI, Machine Learning, Analytics">
                     </div>
                     <div class="form-group">
@@ -191,7 +201,7 @@ const components = {
 
                 <div class="form-group">
                     <label class="checkbox-wrapper">
-                        <input type="checkbox" name="remote" checked>
+                        <input type="checkbox" name="remote" ${isRemote ? 'checked' : ''}>
                         <span>Remote positions only</span>
                     </label>
                 </div>
@@ -221,6 +231,22 @@ const components = {
                 <button type="submit" class="btn btn-primary">Start Search</button>
             </form>
         `;
+    },
+
+    /**
+     * Render job description, handling both HTML and plain text
+     */
+    renderDescription(text) {
+        if (!text) return '';
+        
+        // Simple heuristic: if it looks like HTML, render it as is
+        // Otherwise escape it
+        const hasHtml = /<[a-z][\s\S]*>/i.test(text);
+        if (hasHtml) {
+            return text;
+        }
+        
+        return this.escapeHtml(text);
     },
 
     /**

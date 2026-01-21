@@ -543,7 +543,7 @@ class IndeedAdapter(BaseJobSource):
             # Wait for page to be interactive
             try:
                 page.wait_for_load_state('domcontentloaded', timeout=5000)
-            except:
+            except Exception:
                 logger.debug("domcontentloaded timeout (may be OK)")
                 pass
             
@@ -581,7 +581,7 @@ class IndeedAdapter(BaseJobSource):
                     try:
                         title = page.title()
                         logger.info(f"Page title: {title}")
-                    except:
+                    except Exception:
                         pass
                     break
                 
@@ -707,14 +707,14 @@ class IndeedAdapter(BaseJobSource):
                         title = title_elem.inner_text().strip()
                         if title and title != "Unknown Title":
                             break
-                except:
+                except Exception:
                     continue
             
             # If still no title, try getting text directly
             if title == "Unknown Title":
                 try:
                     title = card.inner_text().strip().split('\n')[0][:100]
-                except:
+                except Exception:
                     pass
             
             # Company
@@ -731,7 +731,7 @@ class IndeedAdapter(BaseJobSource):
                         company = company_elem.inner_text().strip()
                         if company:
                             break
-                except:
+                except Exception:
                     continue
             
             # Location
@@ -748,7 +748,7 @@ class IndeedAdapter(BaseJobSource):
                         location = location_elem.inner_text().strip()
                         if location:
                             break
-                except:
+                except Exception:
                     continue
             
             # Build URL
@@ -772,7 +772,7 @@ class IndeedAdapter(BaseJobSource):
                 desc_elem = card.query_selector('.job-snippet, .summary')
                 if desc_elem:
                     description = desc_elem.inner_text().strip()
-            except:
+            except Exception:
                 pass
             
             # Extract keywords from title and description

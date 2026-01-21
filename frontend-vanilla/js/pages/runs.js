@@ -50,7 +50,7 @@ const runsPage = {
             content.innerHTML = `
                 <div class="page-header">
                     <a href="#/runs" class="text-muted">&larr; Back to Runs</a>
-                    <h2>Run #${run.id}</h2>
+                    <h2>Run #${run.run_id}</h2>
                     <p>Started ${components.formatDate(run.started_at)}</p>
                 </div>
 

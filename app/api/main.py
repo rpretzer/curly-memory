@@ -14,10 +14,11 @@ import yaml
 from pathlib import Path
 
 from app.db import get_db, init_db
-from app.models import Run, Job, JobStatus, RunStatus, UserProfile
+from app.models import Run, Job, JobStatus, RunStatus, UserProfile, RateLimitRecord
 from app.orchestrator import PipelineOrchestrator
 from app.config import config
 from app.user_profile import get_user_profile, create_default_profile
+from app.services.rate_limiter import RateLimiter, rate_limit_dependency
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -190,6 +191,19 @@ class SearchRequest(BaseModel):
     )
 
 
+class BulkApproveRequest(BaseModel):
+    job_ids: List[int]
+
+
+class JobRejectRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class BulkRejectRequest(BaseModel):
+    job_ids: List[int]
+    reason: Optional[str] = None
+
+
 class ScoringWeights(BaseModel):
     title_match: float = 8.0
     vertical_match: float = 6.0
@@ -239,6 +253,8 @@ class UserProfileUpdate(BaseModel):
     phone: Optional[str] = None
     location: Optional[str] = None
     linkedin_url: Optional[str] = None
+    linkedin_user: Optional[str] = None
+    linkedin_password: Optional[str] = None
     portfolio_url: Optional[str] = None
     github_url: Optional[str] = None
     current_title: Optional[str] = None
@@ -257,6 +273,7 @@ class UserProfileUpdate(BaseModel):
     notice_period: Optional[str] = None
     relocation_preference: Optional[str] = None
     remote_preference: Optional[str] = None
+    is_onboarded: Optional[bool] = None
 
 
 class ConfigUpdate(BaseModel):
@@ -298,6 +315,7 @@ async def create_run(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: bool = Depends(verify_api_key),
+    __: bool = Depends(rate_limit_dependency("run_pipeline")),
 ):
     """Create and start a new pipeline run. Requires API key when enabled."""
     try:
@@ -446,6 +464,22 @@ async def list_runs(
     ]
 
 
+@app.delete("/runs")
+async def delete_all_runs(
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_api_key),
+):
+    """Delete all runs and associated jobs. Requires API key when enabled."""
+    try:
+        # Delete all runs (cascade will handle jobs and logs)
+        deleted_count = db.query(Run).delete()
+        db.commit()
+        return {"status": "deleted", "count": deleted_count}
+    except Exception as e:
+        logger.error(f"Error deleting runs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/runs/{run_id}", response_model=RunResponse)
 async def get_run(run_id: int, db: Session = Depends(get_db)):
     """Get a specific pipeline run."""
@@ -518,6 +552,80 @@ async def get_run_jobs(
 
 
 # Job endpoints
+@app.get("/jobs")
+async def list_jobs(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    """List all jobs across all runs."""
+    limit = min(limit, 500)
+    skip = max(skip, 0)
+    
+    jobs = (
+        db.query(Job)
+        .order_by(Job.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    
+    return [
+        {
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "location": job.location,
+            "source": job.source,
+            "source_url": job.source_url,
+            "relevance_score": job.relevance_score,
+            "status": job.status.value,
+            "approved": job.approved,
+            "created_at": job.created_at.isoformat(),
+            "posting_date": job.posting_date.isoformat() if job.posting_date else None,
+            "run_id": job.run_id
+        }
+        for job in jobs
+    ]
+
+
+@app.post("/jobs/bulk-approve")
+async def bulk_approve_jobs(
+    request: BulkApproveRequest,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_api_key),
+):
+    """Approve multiple jobs at once."""
+    jobs = db.query(Job).filter(Job.id.in_(request.job_ids)).all()
+    count = 0
+    for job in jobs:
+        job.approved = True
+        count += 1
+    
+    db.commit()
+    return {"status": "approved", "count": count}
+
+
+@app.post("/jobs/bulk-reject")
+async def bulk_reject_jobs(
+    request: BulkRejectRequest,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_api_key),
+):
+    """Reject multiple jobs at once."""
+    jobs = db.query(Job).filter(Job.id.in_(request.job_ids)).all()
+    count = 0
+    for job in jobs:
+        job.status = JobStatus.REJECTED
+        job.approved = False
+        if request.reason:
+            job.rejection_reason = request.reason
+        count += 1
+    
+    db.commit()
+    return {"status": "rejected", "count": count}
+
+
 @app.get("/jobs/{job_id}")
 async def get_job(job_id: int, db: Session = Depends(get_db)):
     """Get a specific job with full details."""
@@ -567,6 +675,25 @@ async def approve_job(
     job.approved = True
     db.commit()
     return {"status": "approved", "job_id": job_id}
+
+
+@app.post("/jobs/{job_id}/reject")
+async def reject_job(
+    job_id: int,
+    request: JobRejectRequest,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_api_key),
+):
+    """Reject a job. Requires API key when enabled."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job.status = JobStatus.REJECTED
+    job.approved = False
+    job.rejection_reason = request.reason
+    db.commit()
+    return {"status": "rejected", "job_id": job_id}
 
 
 @app.post("/jobs/{job_id}/generate-content")
@@ -620,6 +747,7 @@ async def apply_to_job(
     dry_run: bool = False,
     db: Session = Depends(get_db),
     _: bool = Depends(verify_api_key),
+    __: bool = Depends(rate_limit_dependency("apply_to_job")),
 ):
     """Apply to a job (requires approval). Requires API key when enabled. Set dry_run=True to simulate."""
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -710,6 +838,8 @@ async def get_profile(
         "phone": profile.phone,
         "location": profile.location,
         "linkedin_url": profile.linkedin_url,
+        "linkedin_user": profile.linkedin_user,
+        "has_linkedin_password": bool(profile.linkedin_password),
         "portfolio_url": profile.portfolio_url,
         "github_url": profile.github_url,
         "current_title": profile.current_title,
@@ -729,6 +859,7 @@ async def get_profile(
         "notice_period": profile.notice_period,
         "relocation_preference": profile.relocation_preference,
         "remote_preference": profile.remote_preference,
+        "is_onboarded": profile.is_onboarded,
         "created_at": profile.created_at.isoformat(),
         "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
     }
@@ -745,6 +876,14 @@ async def update_profile(
     
     # Update fields
     update_dict = update.dict(exclude_unset=True)
+    
+    # Encrypt LinkedIn password if provided
+    if "linkedin_password" in update_dict and update_dict["linkedin_password"]:
+        from app.security import get_fernet
+        fernet = get_fernet()
+        encrypted_pwd = fernet.encrypt(update_dict["linkedin_password"].encode()).decode()
+        update_dict["linkedin_password"] = encrypted_pwd
+    
     for key, value in update_dict.items():
         setattr(profile, key, value)
     
@@ -759,6 +898,8 @@ async def update_profile(
         "phone": profile.phone,
         "location": profile.location,
         "linkedin_url": profile.linkedin_url,
+        "linkedin_user": profile.linkedin_user,
+        "has_linkedin_password": bool(profile.linkedin_password),
         "portfolio_url": profile.portfolio_url,
         "github_url": profile.github_url,
         "current_title": profile.current_title,
@@ -778,6 +919,7 @@ async def update_profile(
         "notice_period": profile.notice_period,
         "relocation_preference": profile.relocation_preference,
         "remote_preference": profile.remote_preference,
+        "is_onboarded": profile.is_onboarded,
     }
 
 
@@ -915,14 +1057,22 @@ async def upload_resume(
         with open(resume_path, "wb") as f:
             f.write(content)
 
-        # Encrypt the file
+        # Encrypt the file - if this fails, delete the unencrypted file and raise error
         try:
             from app.security import encrypt_file
             encrypt_file(resume_path)
         except Exception as e:
             logger.error(f"Failed to encrypt resume file: {e}")
-            # If encryption fails, we might want to delete the file or warn
-            # For now, we proceed but log the error
+            # Delete the unencrypted file to prevent storing sensitive data in plaintext
+            try:
+                os.remove(resume_path)
+                logger.info(f"Deleted unencrypted resume file after encryption failure")
+            except Exception as delete_err:
+                logger.error(f"Failed to delete unencrypted resume file: {delete_err}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to securely store resume. Please try again or contact support."
+            )
 
         # Update profile with resume text and path
         profile.resume_text = text_content
@@ -1036,33 +1186,9 @@ async def update_scheduler_config(
 
 
 # Debug endpoints
-# Thread-safe in-memory rate limiter for sensitive endpoints
-from collections import defaultdict
-import time as time_module
-import threading
-
-_rate_limit_store: Dict[str, list] = defaultdict(list)
-_rate_limit_lock = threading.Lock()
-_RATE_LIMIT_WINDOW = 60  # seconds
-_RATE_LIMIT_MAX_REQUESTS = 3  # max requests per window
-
 # Lock for thread-safe config reload
+import threading
 _config_lock = threading.Lock()
-
-
-def _check_rate_limit(key: str) -> bool:
-    """Check if request should be rate limited. Returns True if allowed.
-
-    Thread-safe implementation using a lock to prevent race conditions.
-    """
-    now = time_module.time()
-    with _rate_limit_lock:
-        # Clean old entries
-        _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < _RATE_LIMIT_WINDOW]
-        if len(_rate_limit_store[key]) >= _RATE_LIMIT_MAX_REQUESTS:
-            return False
-        _rate_limit_store[key].append(now)
-        return True
 
 
 class LinkedInCredentials(BaseModel):
@@ -1091,19 +1217,14 @@ async def validate_linkedin_credentials(
     request: Request,
     db: Session = Depends(get_db),
     _: bool = Depends(verify_api_key),
+    __: bool = Depends(rate_limit_dependency("validate_linkedin")),
 ):
     """Validate LinkedIn credentials by attempting to log in. Requires API key when enabled.
 
     WARNING: This endpoint should only be used over HTTPS in production.
     Credentials are sensitive and should never be transmitted over unencrypted connections.
     """
-    # Rate limiting by client IP
-    client_ip = request.client.host if request.client else "unknown"
-    if not _check_rate_limit(f"linkedin_creds:{client_ip}"):
-        raise HTTPException(
-            status_code=429,
-            detail="Too many requests. Please try again later."
-        )
+    # Rate limiting handled by dependency
 
     try:
         from app.agents.search_agent import SearchAgent
@@ -1116,6 +1237,11 @@ async def validate_linkedin_credentials(
 
         if 'linkedin' not in search_agent.sources:
             raise HTTPException(status_code=400, detail="LinkedIn source not enabled")
+
+        # Extract client IP for logging
+        client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (
+            request.client.host if request.client else "unknown"
+        )
 
         # Log attempt without exposing email
         logger.info(f"LinkedIn credential validation attempt from {client_ip}")
@@ -1545,6 +1671,23 @@ async def update_application_defaults(
     return {"status": "updated", "application_defaults": yaml_config["application_defaults"]}
 
 
+# Rate limit status endpoint
+@app.get("/rate-limit/status")
+async def get_rate_limit_status(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Get current rate limit status for the requesting client."""
+    limiter = RateLimiter(db)
+    client_id = limiter._get_client_id(request)
+    status = limiter.get_status(client_id)
+
+    return {
+        "client_id": client_id,
+        "limits": status,
+    }
+
+
 # Metrics endpoint
 @app.get("/metrics")
 async def get_metrics(db: Session = Depends(get_db)):
@@ -1552,7 +1695,7 @@ async def get_metrics(db: Session = Depends(get_db)):
     total_runs = db.query(Run).count()
     total_jobs = db.query(Job).count()
     approved_jobs = db.query(Job).filter(Job.approved == True).count()
-    applied_jobs = db.query(Job).filter(Job.status == JobStatus.APPLIED).count()
+    applied_jobs = db.query(Job).filter(Job.status == JobStatus.APPLICATION_COMPLETED).count()
     
     return {
         "total_runs": total_runs,

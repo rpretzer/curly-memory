@@ -225,6 +225,8 @@ class UserProfile(Base):
     phone = Column(String(50), nullable=True)
     location = Column(String(200), nullable=True)
     linkedin_url = Column(String(500), nullable=True)
+    linkedin_user = Column(String(200), nullable=True)  # LinkedIn Login Email
+    linkedin_password = Column(Text, nullable=True)     # Encrypted Password
     portfolio_url = Column(String(500), nullable=True)
     github_url = Column(String(500), nullable=True)
     
@@ -243,6 +245,7 @@ class UserProfile(Base):
     target_companies = Column(JSON, nullable=True)  # List of target companies
     must_have_keywords = Column(JSON, nullable=True)
     nice_to_have_keywords = Column(JSON, nullable=True)
+    is_onboarded = Column(Boolean, default=False)
 
     # Application preferences (for auto-apply)
     salary_min = Column(Integer, nullable=True)  # Minimum salary expectation
@@ -259,3 +262,26 @@ class UserProfile(Base):
     
     def __repr__(self):
         return f"<UserProfile(id={self.id}, name='{self.name}')>"
+
+
+class RateLimitRecord(Base):
+    """Rate limit tracking for API endpoints.
+
+    SQLite-backed rate limiting that persists across restarts.
+    """
+
+    __tablename__ = "rate_limit_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Identifier for rate limiting (e.g., IP address, API key, or client_id)
+    client_id = Column(String(255), nullable=False, index=True)
+
+    # Endpoint or resource being rate limited
+    endpoint = Column(String(255), nullable=False, index=True)
+
+    # Timestamp of the request
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def __repr__(self):
+        return f"<RateLimitRecord(client_id='{self.client_id}', endpoint='{self.endpoint}')>"

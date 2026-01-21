@@ -107,7 +107,7 @@ class ApplicationQueueManager:
             logger.warning(f"Job {job.id} not approved, skipping")
             return False
 
-        if job.status in [JobStatus.APPLICATION_COMPLETED, JobStatus.APPLIED]:
+        if job.status == JobStatus.APPLICATION_COMPLETED:
             logger.info(f"Job {job.id} already applied, skipping")
             return False
 
@@ -151,7 +151,6 @@ class ApplicationQueueManager:
             Job.approved == True,
             Job.status.notin_([
                 JobStatus.APPLICATION_COMPLETED,
-                JobStatus.APPLIED,
                 JobStatus.APPLICATION_FAILED
             ])
         ).all()
@@ -204,7 +203,7 @@ class ApplicationQueueManager:
             return {"status": "not_found", "job_id": queued_app.job_id}
 
         # Check if already applied
-        if job.status in [JobStatus.APPLICATION_COMPLETED, JobStatus.APPLIED]:
+        if job.status == JobStatus.APPLICATION_COMPLETED:
             return {"status": "already_applied", "job_id": job.id}
 
         # Callback: application starting

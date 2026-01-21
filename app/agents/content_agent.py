@@ -1,6 +1,7 @@
 """Agent for generating tailored content using LLMs."""
 
 import logging
+import html
 from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 
@@ -128,6 +129,7 @@ class ContentGenerationAgent:
             return job.description[:500] if job.description else "No description available."
         
         try:
+            job_desc = html.unescape(job.description or job.raw_description or "No description available.")
             prompt = f"""Summarize this job posting in 2-3 sentences, highlighting:
 1. Key responsibilities
 2. Required qualifications
@@ -138,7 +140,7 @@ Company: {job.company}
 Location: {job.location}
 
 Job Description:
-{job.description or job.raw_description or 'No description available.'}
+{job_desc}
 """
             
             response = self.llm.invoke([HumanMessage(content=prompt)])
@@ -247,8 +249,9 @@ Generate bullet points that:
 """
             )
             
+            job_desc = html.unescape(job.description or job.raw_description or "No description available.")
             prompt = prompt_template.format(
-                job_description=job.description or job.raw_description or "",
+                job_description=job_desc,
                 similar_jobs_context=similar_jobs_context,
                 current_title=profile.get("current_title", "Product Manager"),
                 skills=", ".join(profile.get("skills", [])[:10]),
@@ -356,10 +359,11 @@ Write a compelling cover letter that:
 """
             )
             
+            job_desc = html.unescape(job.description or job.raw_description or "No description available.")
             prompt = prompt_template.format(
                 job_title=job.title,
                 company=job.company,
-                job_description=(job.description or job.raw_description or "")[:1000],
+                job_description=job_desc[:1500],  # Increased context window
                 name=profile.get("name", "Candidate"),
                 current_title=profile.get("current_title", ""),
                 skills=", ".join(profile.get("skills", [])[:10]),
@@ -436,12 +440,13 @@ Provide a direct, professional answer that demonstrates relevant experience.
             )
             
             total_tokens = 0
+            job_desc = html.unescape(job.description or job.raw_description or "No description available.")
             for question in questions:
                 prompt = prompt_template.format(
                     question=question,
                     job_title=job.title,
                     company=job.company,
-                    job_description=(job.description or "")[:500],
+                    job_description=job_desc[:500],
                     skills=", ".join(profile.get("skills", [])[:10]),
                     experience_summary=profile.get("experience_summary", "")[:300],
                 )

@@ -12,6 +12,9 @@ const settingsPage = {
                 api.getSchedulerStatus().catch(() => ({ running: false }))
             ]);
 
+            // Store status for tab switching
+            this.schedulerStatus = schedulerStatus;
+
             content.innerHTML = `
                 <div class="page-header">
                     <h2>Settings</h2>
@@ -28,9 +31,6 @@ const settingsPage = {
                 <div id="settingsContent">
                     ${this.renderProfileTab(profile)}
                 </div>
-
-                <!-- Store scheduler status for tab switch -->
-                <script>window.schedulerStatus = ${JSON.stringify(schedulerStatus)}</script>
             `;
         } catch (error) {
             content.innerHTML = components.emptyState('Error loading settings', error.message);
@@ -62,8 +62,29 @@ const settingsPage = {
                 settingsContent.innerHTML = this.renderAutoApplyTab({ enabled: false, queue_size: 0 });
             });
         } else if (tab === 'scheduler') {
-            settingsContent.innerHTML = this.renderSchedulerTab(window.schedulerStatus);
-            this.attachSchedulerHandler();
+            // Use stored status or fetch fresh
+            if (this.schedulerStatus) {
+                settingsContent.innerHTML = this.renderSchedulerTab(this.schedulerStatus);
+                this.attachSchedulerHandler();
+                // Refresh in background
+                api.getSchedulerStatus().then(status => {
+                    this.schedulerStatus = status;
+                    // Only re-render if we are still on the scheduler tab
+                    // Check if scheduler tab is active (simple check)
+                    if (document.querySelector('.tabs .tab:nth-child(3)').classList.contains('active')) {
+                         settingsContent.innerHTML = this.renderSchedulerTab(status);
+                         this.attachSchedulerHandler();
+                    }
+                });
+            } else {
+                api.getSchedulerStatus().then(status => {
+                    this.schedulerStatus = status;
+                    settingsContent.innerHTML = this.renderSchedulerTab(status);
+                    this.attachSchedulerHandler();
+                }).catch(() => {
+                    settingsContent.innerHTML = this.renderSchedulerTab({ running: false });
+                });
+            }
         } else if (tab === 'resume') {
             api.getProfile().then(profile => {
                 settingsContent.innerHTML = this.renderResumeTab(profile);
@@ -72,13 +93,73 @@ const settingsPage = {
         }
     },
 
-    renderProfileTab(profile) {
+    renderProfileTab(profile, mode = 'view') {
+        const isEdit = mode === 'edit';
+        const lastUpdated = profile.updated_at ? components.formatRelativeTime(profile.updated_at) : 'Never';
+
         return `
-            <form id="profileForm" class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Personal Information</h3>
+            <div class="card">
+                <div class="card-header flex-between">
+                    <div>
+                        <h3 class="card-title">Personal Information</h3>
+                        <p class="text-sm text-muted">Last updated: ${lastUpdated}</p>
+                    </div>
+                    <button class="btn btn-sm ${isEdit ? 'btn-secondary' : 'btn-primary'}" 
+                        onclick="settingsPage.toggleProfileMode('${isEdit ? 'view' : 'edit'}')">
+                        ${isEdit ? 'Cancel' : 'Edit Profile'}
+                    </button>
                 </div>
 
+                ${!isEdit ? this.renderProfileView(profile) : this.renderProfileForm(profile)}
+            </div>
+        `;
+    },
+
+    renderProfileView(profile) {
+        const field = (label, value) => `
+            <div class="mb-3">
+                <div class="text-xs text-muted uppercase font-bold">${label}</div>
+                <div class="text-base">${value || '<span class="text-muted italic">Not set</span>'}</div>
+            </div>
+        `;
+
+        return `
+            <div class="profile-view">
+                <div class="grid grid-cols-2 gap-4">
+                    ${field('Full Name', components.escapeHtml(profile.name))}
+                    ${field('Email', components.escapeHtml(profile.email))}
+                    ${field('Phone', components.escapeHtml(profile.phone))}
+                    ${field('Location', components.escapeHtml(profile.location))}
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4 mt-2">
+                    ${field('Current Title', components.escapeHtml(profile.current_title))}
+                    ${field('LinkedIn Profile', profile.linkedin_url ? `<a href="${components.escapeHtml(profile.linkedin_url)}" target="_blank" class="text-primary hover:underline">View Profile</a>` : null)}
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mt-2 p-3 rounded" style="background-color: var(--bg-tertiary);">
+                    ${field('LinkedIn Login Email', components.escapeHtml(profile.linkedin_user))}
+                    ${field('LinkedIn Password', profile.has_linkedin_password ? '********' : null)}
+                </div>
+
+                <div class="mt-2">
+                    ${field('Target Titles', (profile.target_titles || []).map(t => `<span class="badge badge-neutral mr-1">${components.escapeHtml(t)}</span>`).join(''))}
+                </div>
+
+                <div class="mt-2">
+                    ${field('Skills', (profile.skills || []).map(s => `<span class="badge badge-info mr-1">${components.escapeHtml(s)}</span>`).join(''))}
+                </div>
+
+                <div class="mt-2">
+                    ${field('Experience Summary', components.escapeHtml(profile.experience_summary))}
+                </div>
+            </div>
+        `;
+    },
+
+    renderProfileForm(profile) {
+        return `
+            <form id="profileForm">
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Full Name</label>
@@ -118,6 +199,23 @@ const settingsPage = {
                     </div>
                 </div>
 
+                <div class="card p-3 mb-3" style="background-color: var(--bg-tertiary);">
+                    <h4 class="text-sm font-semibold mb-2">LinkedIn Credentials</h4>
+                    <p class="text-xs text-muted mb-3">Optional: Provide credentials to enable authenticated scraping (avoids redacted results). Stored encrypted.</p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Login Email</label>
+                            <input type="email" class="form-input" name="linkedin_user"
+                                value="${components.escapeHtml(profile.linkedin_user || '')}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Login Password</label>
+                            <input type="password" class="form-input" name="linkedin_password"
+                                placeholder="${profile.has_linkedin_password ? '******** (Leave empty to keep current)' : 'Enter password'}">
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label class="form-label">Current Title</label>
                     <input type="text" class="form-input" name="current_title"
@@ -146,9 +244,22 @@ const settingsPage = {
                         placeholder="Brief summary of your experience...">${components.escapeHtml(profile.experience_summary || '')}</textarea>
                 </div>
 
-                <button type="submit" class="btn btn-primary">Save Profile</button>
+                <div class="flex-end gap-2 mt-4">
+                    <button type="button" class="btn btn-secondary" onclick="settingsPage.toggleProfileMode('view')">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveProfileBtn">Save Changes</button>
+                </div>
             </form>
         `;
+    },
+
+    toggleProfileMode(mode) {
+        api.getProfile().then(profile => {
+            const settingsContent = document.getElementById('settingsContent');
+            settingsContent.innerHTML = this.renderProfileTab(profile, mode);
+            if (mode === 'edit') {
+                this.attachProfileHandler();
+            }
+        });
     },
 
     renderAutoApplyTab(status) {
@@ -341,6 +452,13 @@ const settingsPage = {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const saveBtn = document.getElementById('saveProfileBtn');
+            const originalBtnText = saveBtn.textContent;
+            
+            // UI: Loading state
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<div class="spinner spinner-sm"></div> Saving...';
+
             const formData = new FormData(form);
             const data = {
                 name: formData.get('name'),
@@ -348,6 +466,8 @@ const settingsPage = {
                 phone: formData.get('phone'),
                 location: formData.get('location'),
                 linkedin_url: formData.get('linkedin_url'),
+                linkedin_user: formData.get('linkedin_user'),
+                linkedin_password: formData.get('linkedin_password') || null,
                 portfolio_url: formData.get('portfolio_url'),
                 current_title: formData.get('current_title'),
                 target_titles: formData.get('target_titles')?.split(',').map(t => t.trim()).filter(Boolean),
@@ -356,10 +476,21 @@ const settingsPage = {
             };
 
             try {
-                await api.updateProfile(data);
-                components.notify('Profile saved!', 'success');
+                // Save and get updated profile
+                const updatedProfile = await api.updateProfile(data);
+                
+                components.notify('Profile saved successfully!', 'success');
+                
+                // UX: Switch back to view mode with updated data
+                const settingsContent = document.getElementById('settingsContent');
+                settingsContent.innerHTML = this.renderProfileTab(updatedProfile, 'view');
+                
             } catch (error) {
-                components.notify(`Error: ${error.message}`, 'error');
+                components.notify(`Error saving profile: ${error.message}`, 'error');
+                
+                // UI: Reset button state on error
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalBtnText;
             }
         });
     },

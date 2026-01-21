@@ -309,7 +309,7 @@ class LinkedInAdapter(BaseJobSource):
                     if elem:
                         name = elem.inner_text().strip()
                         break
-                except:
+                except Exception:
                     continue
             
             # Extract company
@@ -325,7 +325,7 @@ class LinkedInAdapter(BaseJobSource):
                     if elem:
                         company = elem.inner_text().strip()
                         break
-                except:
+                except Exception:
                     continue
             
             # Extract profile URL
@@ -339,7 +339,7 @@ class LinkedInAdapter(BaseJobSource):
                             profile_url = f"{self.base_url}{href}"
                         elif href.startswith('http'):
                             profile_url = href
-            except:
+            except Exception:
                 pass
             
             if name:
@@ -382,7 +382,7 @@ class LinkedInAdapter(BaseJobSource):
                     numbers = re.findall(r'\d+', text)
                     if numbers:
                         job_count = max(job_count, int(numbers[0]))
-            except:
+            except Exception:
                 pass
             
             # Go back to connections page
@@ -546,7 +546,7 @@ class LinkedInAdapter(BaseJobSource):
                         if next_button and next_button.is_visible():
                             next_button.click()
                             time.sleep(3)
-                    except:
+                    except Exception:
                         pass
                     
                     scroll_attempts += 1
@@ -599,7 +599,7 @@ class LinkedInAdapter(BaseJobSource):
                         location = location_elem.inner_text().strip()
                         if location:
                             break
-                except:
+                except Exception:
                     continue
             
             # Description snippet
@@ -839,6 +839,8 @@ class LinkedInAdapter(BaseJobSource):
                     if job:
                         jobs.append(job)
                 except Exception as e:
+                    if "Masked content detected" in str(e):
+                        raise e
                     logger.debug(f"Error parsing card: {e}")
                     continue
             
@@ -868,6 +870,10 @@ class LinkedInAdapter(BaseJobSource):
                 card.find('span', class_='job-search-card__subtitle-link')
             )
             company = company_elem.get_text(strip=True) if company_elem else "Unknown Company"
+            
+            # Check for masked content
+            if "****" in title or "****" in company:
+                raise ValueError("Masked content detected")
             
             # Location
             location_elem = (
@@ -917,5 +923,7 @@ class LinkedInAdapter(BaseJobSource):
                 metadata={"job_id": job_id}
             )
         except Exception as e:
+            if "Masked content detected" in str(e):
+                raise e
             logger.debug(f"Error parsing LinkedIn card: {e}")
             return None

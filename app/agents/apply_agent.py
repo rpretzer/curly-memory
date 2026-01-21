@@ -48,16 +48,12 @@ class ApplyAgent:
         # Track temp files for cleanup
         self._temp_files: list = []
 
+        # Lazy initialization for Playwright to avoid event loop issues
         if self.enable_playwright:
             try:
-                from playwright.sync_api import sync_playwright
-                self.playwright = sync_playwright().start()
-                # Browser will be launched on first use
+                import playwright
             except ImportError:
                 logger.warning("Playwright not installed. Browser automation disabled.")
-                self.enable_playwright = False
-            except Exception as e:
-                logger.error(f"Failed to initialize Playwright: {e}")
                 self.enable_playwright = False
     
     def apply_via_api(
@@ -138,10 +134,10 @@ class ApplyAgent:
             # Launch browser if not already launched
             if not self.browser:
                 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
-                playwright = sync_playwright().start()
+                self.playwright = sync_playwright().start()
                 # Launch browser - use headless=False for debugging, can be changed to True for production
                 headless_mode = getattr(config, 'playwright', {}).get('headless', False) if hasattr(config, 'playwright') else False
-                self.browser = playwright.chromium.launch(
+                self.browser = self.playwright.chromium.launch(
                     headless=headless_mode
                 )
             
@@ -167,8 +163,8 @@ class ApplyAgent:
             elif job.source == "linkedin" and job.application_type == ApplicationType.EASY_APPLY:
                 return self._apply_linkedin_easy_apply(job, application_data, profile, run_id)
             else:
-                logger.warning(f"Application method not implemented for source: {job.source}")
-                return False
+                logger.info(f"No specific automation for {job.source}, falling back to assisted mode")
+                return self._apply_external_assisted(job, application_data, run_id)
         
         except Exception as e:
             logger.error(f"Error in Playwright application: {e}", exc_info=True)
@@ -523,8 +519,8 @@ class ApplyAgent:
             # Launch browser in non-headless mode for user interaction
             if not self.browser:
                 from playwright.sync_api import sync_playwright
-                playwright = sync_playwright().start()
-                self.browser = playwright.chromium.launch(
+                self.playwright = sync_playwright().start()
+                self.browser = self.playwright.chromium.launch(
                     headless=False,  # User needs to see and interact
                     args=['--start-maximized']
                 )

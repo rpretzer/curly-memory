@@ -21,17 +21,20 @@ interface Run {
 export default function RunsPage() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRuns();
   }, []);
 
   const fetchRuns = async () => {
+    setError(null);
     try {
       const response = await axios.get('/api/runs');
       setRuns(response.data);
     } catch (error) {
       console.error('Error fetching runs:', error);
+      setError('Failed to load runs. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -47,13 +50,83 @@ export default function RunsPage() {
     applying: 'bg-pink-100 text-pink-800',
   };
 
+  // Skeleton loader for runs
+  const RunSkeleton = () => (
+    <div className="bg-white rounded-lg shadow p-6 animate-pulse">
+      <div className="flex justify-between items-start mb-4">
+        <div className="h-6 bg-gray-200 rounded w-24"></div>
+        <div className="h-5 bg-gray-200 rounded w-20"></div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="text-center">
+            <div className="h-8 bg-gray-200 rounded w-12 mx-auto mb-1"></div>
+            <div className="h-3 bg-gray-200 rounded w-16 mx-auto"></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   if (loading) {
-    return <div className="p-8">Loading runs...</div>;
+    return (
+      <main className="min-h-screen bg-gray-50" role="main" aria-label="Runs page">
+        <nav className="bg-white shadow-sm border-b" role="navigation" aria-label="Main navigation">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between h-16">
+              <div className="flex items-center">
+                <h1 className="text-xl font-bold text-gray-900">Job Search Pipeline</h1>
+              </div>
+            </div>
+          </div>
+        </nav>
+        <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            <h2 className="text-2xl font-bold mb-6">Pipeline Runs</h2>
+            <div className="space-y-4" aria-busy="true" aria-label="Loading runs">
+              {[1, 2, 3].map((i) => (
+                <RunSkeleton key={i} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="min-h-screen bg-gray-50" role="main" aria-label="Runs page">
+        <nav className="bg-white shadow-sm border-b" role="navigation" aria-label="Main navigation">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between h-16">
+              <div className="flex items-center">
+                <h1 className="text-xl font-bold text-gray-900">Job Search Pipeline</h1>
+              </div>
+            </div>
+          </div>
+        </nav>
+        <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center" role="alert">
+              <h2 className="text-lg font-semibold text-red-800 mb-2">Error Loading Runs</h2>
+              <p className="text-red-600 mb-4">{error}</p>
+              <button
+                onClick={() => { setLoading(true); fetchRuns(); }}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+              >
+                Try Again
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm border-b">
+    <main className="min-h-screen bg-gray-50" role="main" aria-label="Runs page">
+      <nav className="bg-white shadow-sm border-b" role="navigation" aria-label="Main navigation">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex">
@@ -70,6 +143,7 @@ export default function RunsPage() {
                 <Link
                   href="/runs"
                   className="border-blue-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                  aria-current="page"
                 >
                   Runs
                 </Link>

@@ -12,10 +12,22 @@
     router.register('/runs', () => runsPage.renderList());
     router.register('/runs/:id', (params) => runsPage.renderDetail(params));
     router.register('/settings', () => settingsPage.render());
+    router.register('/onboarding', () => onboardingPage.render());
 
     // Initialize router when DOM is ready
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         router.init();
+        
+        try {
+            const profile = await api.getProfile();
+            if (!profile.is_onboarded && window.location.hash !== '#/onboarding') {
+                console.log('User not onboarded, redirecting...');
+                router.navigate('/onboarding');
+            }
+        } catch (e) {
+            console.error('Failed to check onboarding status:', e);
+        }
+        
         console.log('Job Search Pipeline initialized');
     });
 

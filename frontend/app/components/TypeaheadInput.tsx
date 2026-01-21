@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 
 interface TypeaheadInputProps {
   value: string;
@@ -11,6 +11,7 @@ interface TypeaheadInputProps {
   className?: string;
   id?: string;
   onKeyPress?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  'aria-label'?: string;
 }
 
 export default function TypeaheadInput({
@@ -22,12 +23,15 @@ export default function TypeaheadInput({
   className = '',
   id,
   onKeyPress,
+  'aria-label': ariaLabel,
 }: TypeaheadInputProps) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const listboxId = useId();
+  const inputId = id || useId();
 
   useEffect(() => {
     if (value && suggestions.length > 0) {
@@ -118,8 +122,15 @@ export default function TypeaheadInput({
     <div className="relative">
       <input
         ref={inputRef}
-        id={id}
+        id={inputId}
         type="text"
+        role="combobox"
+        aria-expanded={showSuggestions && filteredSuggestions.length > 0}
+        aria-haspopup="listbox"
+        aria-controls={listboxId}
+        aria-autocomplete="list"
+        aria-activedescendant={activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
+        aria-label={ariaLabel || placeholder}
         value={value}
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
@@ -135,11 +146,17 @@ export default function TypeaheadInput({
       {showSuggestions && filteredSuggestions.length > 0 && (
         <div
           ref={suggestionsRef}
+          id={listboxId}
+          role="listbox"
+          aria-label={`${ariaLabel || placeholder} suggestions`}
           className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto"
         >
           {filteredSuggestions.map((suggestion, index) => (
             <div
               key={index}
+              id={`${listboxId}-option-${index}`}
+              role="option"
+              aria-selected={index === activeIndex}
               onClick={() => handleSelect(suggestion)}
               className={`px-4 py-2 cursor-pointer hover:bg-blue-50 ${
                 index === activeIndex ? 'bg-blue-100' : ''
@@ -150,6 +167,17 @@ export default function TypeaheadInput({
           ))}
         </div>
       )}
+      {/* Screen reader announcement for suggestions count */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {showSuggestions && filteredSuggestions.length > 0
+          ? `${filteredSuggestions.length} suggestions available. Use arrow keys to navigate.`
+          : ''}
+      </div>
     </div>
   );
 }

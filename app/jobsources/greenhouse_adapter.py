@@ -228,6 +228,11 @@ class GreenhouseAdapter(BaseJobSource):
             # Get description content
             content = job_data.get("content", "")
 
+            # Unescape HTML entities (e.g. &lt; to <)
+            if content:
+                import html
+                content = html.unescape(content)
+
             # Clean HTML from content if present
             if content:
                 # Simple HTML tag removal
@@ -251,7 +256,7 @@ class GreenhouseAdapter(BaseJobSource):
                 try:
                     # Greenhouse uses ISO format
                     posting_date = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
-                except:
+                except (ValueError, AttributeError):
                     posting_date = datetime.utcnow()
 
             # Build source URL

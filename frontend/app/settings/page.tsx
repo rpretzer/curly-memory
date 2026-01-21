@@ -376,8 +376,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm border-b">
+    <main className="min-h-screen bg-gray-50" role="main" aria-label="Settings page">
+      <nav className="bg-white shadow-sm border-b" role="navigation" aria-label="Main navigation">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex">
@@ -406,6 +406,7 @@ export default function SettingsPage() {
                 <Link
                   href="/settings"
                   className="border-blue-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                  aria-current="page"
                 >
                   Settings
                 </Link>
@@ -434,10 +435,14 @@ export default function SettingsPage() {
 
           {/* Tabs */}
           <div className="border-b border-gray-200 mb-6">
-            <nav className="-mb-px flex space-x-8">
+            <nav className="-mb-px flex space-x-8" role="tablist" aria-label="Settings sections">
               <button
+                id="tab-profile"
+                role="tab"
+                aria-selected={activeTab === 'profile'}
+                aria-controls="panel-profile"
                 onClick={() => setActiveTab('profile')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`py-4 px-1 border-b-2 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                   activeTab === 'profile'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -446,8 +451,12 @@ export default function SettingsPage() {
                 Profile & Resume
               </button>
               <button
+                id="tab-search"
+                role="tab"
+                aria-selected={activeTab === 'search'}
+                aria-controls="panel-search"
                 onClick={() => setActiveTab('search')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`py-4 px-1 border-b-2 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                   activeTab === 'search'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -456,8 +465,12 @@ export default function SettingsPage() {
                 Search Parameters
               </button>
               <button
+                id="tab-schedule"
+                role="tab"
+                aria-selected={activeTab === 'schedule'}
+                aria-controls="panel-schedule"
                 onClick={() => setActiveTab('schedule')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`py-4 px-1 border-b-2 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                   activeTab === 'schedule'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -466,8 +479,12 @@ export default function SettingsPage() {
                 Schedule
               </button>
               <button
+                id="tab-prompts"
+                role="tab"
+                aria-selected={activeTab === 'prompts'}
+                aria-controls="panel-prompts"
                 onClick={() => setActiveTab('prompts')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`py-4 px-1 border-b-2 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                   activeTab === 'prompts'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -476,8 +493,12 @@ export default function SettingsPage() {
                 Content Prompts
               </button>
               <button
+                id="tab-debug"
+                role="tab"
+                aria-selected={activeTab === 'debug'}
+                aria-controls="panel-debug"
                 onClick={() => setActiveTab('debug')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`py-4 px-1 border-b-2 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                   activeTab === 'debug'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -490,7 +511,13 @@ export default function SettingsPage() {
 
           {/* Profile Tab */}
           {activeTab === 'profile' && profile && (
-            <form onSubmit={handleProfileUpdate} className="bg-white shadow rounded-lg p-6 space-y-6">
+            <form
+              id="panel-profile"
+              role="tabpanel"
+              aria-labelledby="tab-profile"
+              onSubmit={handleProfileUpdate}
+              className="bg-white shadow rounded-lg p-6 space-y-6"
+            >
               <div>
                 <h3 className="text-xl font-semibold mb-4">Personal Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -737,7 +764,13 @@ export default function SettingsPage() {
 
           {/* Search Parameters Tab */}
           {activeTab === 'search' && config && (
-            <form onSubmit={handleConfigUpdate} className="bg-white shadow rounded-lg p-6 space-y-6">
+            <form
+              id="panel-search"
+              role="tabpanel"
+              aria-labelledby="tab-search"
+              onSubmit={handleConfigUpdate}
+              className="bg-white shadow rounded-lg p-6 space-y-6"
+            >
               <div>
                 <h3 className="text-xl font-semibold mb-4">Default Search Parameters</h3>
                 
@@ -1075,17 +1108,27 @@ export default function SettingsPage() {
 
           {/* Schedule Tab */}
           {activeTab === 'schedule' && (
-            <ScheduleForm />
+            <div id="panel-schedule" role="tabpanel" aria-labelledby="tab-schedule">
+              <ScheduleForm />
+            </div>
           )}
 
           {/* Debug Tab */}
           {activeTab === 'debug' && (
-            <DebugStatsTab />
+            <div id="panel-debug" role="tabpanel" aria-labelledby="tab-debug">
+              <DebugStatsTab />
+            </div>
           )}
 
           {/* Prompts Tab */}
           {activeTab === 'prompts' && config && (
-            <form onSubmit={handleConfigUpdate} className="bg-white shadow rounded-lg p-6 space-y-6">
+            <form
+              id="panel-prompts"
+              role="tabpanel"
+              aria-labelledby="tab-prompts"
+              onSubmit={handleConfigUpdate}
+              className="bg-white shadow rounded-lg p-6 space-y-6"
+            >
               <div>
                 <h3 className="text-xl font-semibold mb-4">Content Generation Prompts</h3>
                 <div className="space-y-4">
@@ -1286,10 +1329,10 @@ function DebugStatsTab() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
+                <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+                <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">

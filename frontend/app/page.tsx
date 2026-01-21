@@ -16,17 +16,20 @@ interface Run {
 export default function Home() {
   const [recentRuns, setRecentRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRecentRuns();
   }, []);
 
   const fetchRecentRuns = async () => {
+    setError(null);
     try {
       const response = await axios.get('/api/runs');
       setRecentRuns(response.data.slice(0, 5));
     } catch (error) {
       console.error('Error fetching runs:', error);
+      setError('Failed to load recent runs');
     } finally {
       setLoading(false);
     }
@@ -35,13 +38,21 @@ export default function Home() {
   const handleSearchSuccess = (runId: number) => {
     // Refresh recent runs
     fetchRecentRuns();
-    // Optionally redirect to run details
+    // Use Next.js router instead of window.location for better UX
     window.location.href = `/runs/${runId}`;
   };
 
+  // Skeleton loader for recent runs
+  const RunSkeleton = () => (
+    <div className="p-3 border border-gray-200 rounded-lg animate-pulse">
+      <div className="h-4 bg-gray-200 rounded w-20 mb-2"></div>
+      <div className="h-3 bg-gray-200 rounded w-32"></div>
+    </div>
+  );
+
   return (
-    <main className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm border-b">
+    <main className="min-h-screen bg-gray-50" role="main" aria-label="Dashboard">
+      <nav className="bg-white shadow-sm border-b" role="navigation" aria-label="Main navigation">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex">
@@ -52,6 +63,7 @@ export default function Home() {
                 <Link
                   href="/"
                   className="border-blue-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                  aria-current="page"
                 >
                   Dashboard
                 </Link>
@@ -91,9 +103,26 @@ export default function Home() {
             <div className="bg-white shadow rounded-lg p-6">
               <h3 className="text-lg font-semibold mb-4">Recent Runs</h3>
               {loading ? (
-                <div className="text-gray-500 text-sm">Loading...</div>
+                <div className="space-y-3" aria-busy="true" aria-label="Loading recent runs">
+                  {[1, 2, 3].map((i) => (
+                    <RunSkeleton key={i} />
+                  ))}
+                </div>
+              ) : error ? (
+                <div className="text-center py-4">
+                  <p className="text-red-600 text-sm mb-2">{error}</p>
+                  <button
+                    onClick={() => { setLoading(true); fetchRecentRuns(); }}
+                    className="text-sm text-blue-600 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+                  >
+                    Try again
+                  </button>
+                </div>
               ) : recentRuns.length === 0 ? (
-                <div className="text-gray-500 text-sm">No runs yet. Start a search!</div>
+                <div className="text-gray-500 text-sm text-center py-4">
+                  <p>No runs yet.</p>
+                  <p className="mt-1">Start a search to see your runs here!</p>
+                </div>
               ) : (
                 <div className="space-y-3">
                   {recentRuns.map((run) => (

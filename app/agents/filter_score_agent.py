@@ -444,7 +444,7 @@ class FilterAndScoreAgent:
             try:
                 from dateutil import parser
                 posting_date = parser.parse(posting_date)
-            except:
+            except (ValueError, ImportError, AttributeError):
                 return 5.0
         
         age_days = (now - posting_date).days

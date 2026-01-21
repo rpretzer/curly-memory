@@ -47,6 +47,24 @@ class SearchAgent:
         self.sources = {}
         job_sources_config = config.get_job_sources_config()
         
+        # Get profile for credentials override
+        from app.user_profile import get_user_profile
+        from app.security import get_fernet
+        try:
+            profile = get_user_profile(db)
+            profile_li_user = profile.linkedin_user if profile else None
+            profile_li_pass = None
+            if profile and profile.linkedin_password:
+                try:
+                    fernet = get_fernet()
+                    profile_li_pass = fernet.decrypt(profile.linkedin_password.encode()).decode()
+                except Exception as e:
+                    logger.error(f"Failed to decrypt LinkedIn password: {e}")
+        except Exception as e:
+            logger.warning(f"Error fetching profile credentials: {e}")
+            profile_li_user = None
+            profile_li_pass = None
+        
         # LinkedIn
         if job_sources_config.get("linkedin", {}).get("enabled", True):
             linkedin_config = job_sources_config.get("linkedin", {})
@@ -55,11 +73,18 @@ class SearchAgent:
                 linkedin_config["apify_api_key"] = config.apify_api_key
             if config.mantiks_api_key:
                 linkedin_config["mantiks_api_key"] = config.mantiks_api_key
-            # Add LinkedIn credentials if available
+            # Add LinkedIn credentials from env if available
             if config.linkedin_email:
                 linkedin_config["linkedin_email"] = config.linkedin_email
             if config.linkedin_password:
                 linkedin_config["linkedin_password"] = config.linkedin_password
+            
+            # Override with profile credentials if set
+            if profile_li_user:
+                linkedin_config["linkedin_email"] = profile_li_user
+            if profile_li_pass:
+                linkedin_config["linkedin_password"] = profile_li_pass
+                
             self.sources["linkedin"] = LinkedInAdapter(
                 config=linkedin_config,
                 api_key=config.linkedin_api_key

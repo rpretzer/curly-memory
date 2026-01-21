@@ -272,7 +272,7 @@ class WorkdayAdapter(BaseJobSource):
                         posting_date = datetime.fromisoformat(posted_on.replace("Z", "+00:00"))
                     else:
                         posting_date = datetime.strptime(posted_on, "%Y-%m-%d")
-                except:
+                except (ValueError, AttributeError):
                     posting_date = datetime.utcnow()
 
             # Build job URL

@@ -87,8 +87,34 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
     }
   };
 
+  // Form validation state
+  const [validationErrors, setValidationErrors] = useState<{ titles?: string; locations?: string }>({});
+
+  const validateForm = (): boolean => {
+    const errors: { titles?: string; locations?: string } = {};
+
+    const filteredTitles = formData.titles.filter(t => t.trim());
+    if (filteredTitles.length === 0) {
+      errors.titles = 'At least one job title is required';
+    }
+
+    const filteredLocations = formData.locations.filter(l => l.trim());
+    if (filteredLocations.length === 0) {
+      errors.locations = 'At least one location is required';
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate form before submission
+    if (!validateForm()) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setRunStatus(null);
@@ -137,6 +163,10 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
   const addArrayItem = (field: 'titles' | 'locations' | 'keywords', value: string) => {
     if (value.trim() && !formData[field].includes(value.trim())) {
       setFormData({ ...formData, [field]: [...formData[field], value.trim()] });
+      // Clear validation error for this field when user adds an item
+      if (validationErrors[field as 'titles' | 'locations']) {
+        setValidationErrors({ ...validationErrors, [field]: undefined });
+      }
     }
   };
 
@@ -230,7 +260,9 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
       <h3 className="text-lg font-semibold mb-4">Start New Search</h3>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Job Titles</label>
+          <label htmlFor="job-titles-input" className="block text-sm font-medium text-gray-700 mb-1">
+            Job Titles <span className="text-red-500">*</span>
+          </label>
           <div className="flex flex-wrap gap-2 mb-2">
             {formData.titles.map((title, idx) => (
               <span
@@ -242,6 +274,7 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
                   type="button"
                   onClick={() => removeArrayItem('titles', idx)}
                   className="ml-2 text-blue-600 hover:text-blue-800"
+                  aria-label={`Remove ${title}`}
                 >
                   ×
                 </button>
@@ -249,8 +282,11 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
             ))}
           </div>
           <input
+            id="job-titles-input"
             type="text"
-            placeholder="Add job title"
+            placeholder="Add job title and press Enter"
+            aria-describedby={validationErrors.titles ? 'titles-error' : undefined}
+            aria-invalid={!!validationErrors.titles}
             onKeyPress={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -258,12 +294,21 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
                 e.currentTarget.value = '';
               }
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+            className={`w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              validationErrors.titles ? 'border-red-500' : 'border-gray-300'
+            }`}
           />
+          {validationErrors.titles && (
+            <p id="titles-error" className="mt-1 text-sm text-red-600" role="alert">
+              {validationErrors.titles}
+            </p>
+          )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Locations</label>
+          <label htmlFor="locations-input" className="block text-sm font-medium text-gray-700 mb-1">
+            Locations <span className="text-red-500">*</span>
+          </label>
           <div className="flex flex-wrap gap-2 mb-2">
             {formData.locations.map((location, idx) => (
               <span
@@ -275,6 +320,7 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
                   type="button"
                   onClick={() => removeArrayItem('locations', idx)}
                   className="ml-2 text-green-600 hover:text-green-800"
+                  aria-label={`Remove ${location}`}
                 >
                   ×
                 </button>
@@ -282,8 +328,11 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
             ))}
           </div>
           <input
+            id="locations-input"
             type="text"
-            placeholder="Add location"
+            placeholder="Add location and press Enter"
+            aria-describedby={validationErrors.locations ? 'locations-error' : undefined}
+            aria-invalid={!!validationErrors.locations}
             onKeyPress={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -291,8 +340,15 @@ export default function SearchForm({ onSuccess, compact = false }: SearchFormPro
                 e.currentTarget.value = '';
               }
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+            className={`w-full px-3 py-2 border rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              validationErrors.locations ? 'border-red-500' : 'border-gray-300'
+            }`}
           />
+          {validationErrors.locations && (
+            <p id="locations-error" className="mt-1 text-sm text-red-600" role="alert">
+              {validationErrors.locations}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center space-x-4">
