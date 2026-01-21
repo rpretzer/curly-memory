@@ -106,3 +106,6 @@ const SUGGESTIONS = {
         'web',
     ],
 };
+
+// Make SUGGESTIONS available globally
+window.SUGGESTIONS = SUGGESTIONS;

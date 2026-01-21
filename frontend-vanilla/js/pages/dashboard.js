@@ -78,20 +78,35 @@ const dashboardPage = {
         const form = document.getElementById('searchForm');
         if (!form) return;
 
-        // Setup chip inputs
+        // Setup chip inputs helper
+        const setupChipInput = (id, items, color, suggestions) => {
+            const container = document.getElementById(id);
+            if (!container) {
+                console.warn(`Container not found for chip input: ${id}`);
+                return;
+            }
+
+            const chipInput = components.chipInput(id.replace('-chip-input', ''), items, color, suggestions, 'primary');
+            container.innerHTML = chipInput.html;
+            chipInput.setup();
+        };
+
+        // Setup chip inputs with defaults first, then update with profile data
+        setupChipInput('search-titles-chip-input', ['Product Manager'], 'blue', SUGGESTIONS.jobTitles);
+        setupChipInput('search-locations-chip-input', ['Remote, US'], 'green', SUGGESTIONS.locations);
+        setupChipInput('search-keywords-chip-input', [], 'purple', SUGGESTIONS.keywords);
+
+        // Update with profile data when available
         api.getProfile().then(profile => {
-            const setupChipInput = (id, items, color, suggestions) => {
-                const container = document.getElementById(id);
-                if (!container) return;
-
-                const chipInput = components.chipInput(id.replace('-chip-input', ''), items, color, suggestions, 'primary');
-                container.innerHTML = chipInput.html;
-                chipInput.setup();
-            };
-
-            setupChipInput('search-titles-chip-input', profile.target_titles || ['Product Manager'], 'blue', SUGGESTIONS.jobTitles);
-            setupChipInput('search-locations-chip-input', ['Remote, US'], 'green', SUGGESTIONS.locations);
-            setupChipInput('search-keywords-chip-input', profile.must_have_keywords || [], 'purple', SUGGESTIONS.keywords);
+            if (profile.target_titles && profile.target_titles.length > 0) {
+                setupChipInput('search-titles-chip-input', profile.target_titles, 'blue', SUGGESTIONS.jobTitles);
+            }
+            if (profile.must_have_keywords && profile.must_have_keywords.length > 0) {
+                setupChipInput('search-keywords-chip-input', profile.must_have_keywords, 'purple', SUGGESTIONS.keywords);
+            }
+        }).catch(error => {
+            console.warn('Could not load profile for search form:', error);
+            // Already setup with defaults above
         });
 
         form.addEventListener('submit', async (e) => {
