@@ -91,10 +91,24 @@ const dashboardPage = {
             chipInput.setup();
         };
 
-        // Setup chip inputs with defaults first, then update with profile data
-        setupChipInput('search-titles-chip-input', ['Product Manager'], 'blue', SUGGESTIONS.jobTitles);
-        setupChipInput('search-locations-chip-input', ['Remote, US'], 'green', SUGGESTIONS.locations);
+        // Setup chip inputs - empty by default, will be populated from profile if available
+        setupChipInput('search-titles-chip-input', [], 'blue', SUGGESTIONS.jobTitles);
+        setupChipInput('search-locations-chip-input', [], 'green', SUGGESTIONS.locations);
         setupChipInput('search-keywords-chip-input', [], 'purple', SUGGESTIONS.keywords);
+
+        // Setup salary input formatting
+        const salaryInput = document.getElementById('salary_min');
+        if (salaryInput) {
+            salaryInput.addEventListener('input', (e) => {
+                // Remove non-digits
+                let value = e.target.value.replace(/[^\d]/g, '');
+                // Format with commas
+                if (value) {
+                    value = parseInt(value).toLocaleString('en-US');
+                }
+                e.target.value = value;
+            });
+        }
 
         // Update with profile data when available
         api.getProfile().then(profile => {
@@ -136,9 +150,13 @@ const dashboardPage = {
                 max_results: parseInt(formData.get('max_results')) || 50
             };
 
+            // Parse salary_min (remove commas)
+            const salaryMinStr = formData.get('salary_min');
+            const salaryMin = salaryMinStr ? parseInt(salaryMinStr.replace(/[^\d]/g, '')) : null;
+
             const runConfig = {
                 search: searchConfig,
-                salary_min: formData.get('salary_min') ? parseInt(formData.get('salary_min')) : null,
+                salary_min: salaryMin,
                 // Default values for other fields
                 remote_preference: 'any',
                 generate_content: true,

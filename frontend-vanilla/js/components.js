@@ -173,9 +173,12 @@ const components = {
                     </div>
                     <div class="form-group">
                         <label class="form-label">Min Salary</label>
-                        <input type="number" class="form-input" name="salary_min"
-                            value="${salaryMin}"
-                            placeholder="e.g., 150000">
+                        <div class="input-with-prefix">
+                            <span class="input-prefix">$</span>
+                            <input type="text" class="form-input" name="salary_min" id="salary_min"
+                                value="${salaryMin ? salaryMin.toLocaleString('en-US') : ''}"
+                                placeholder="e.g., 150,000">
+                        </div>
                     </div>
                 </div>
 

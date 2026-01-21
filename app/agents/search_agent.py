@@ -289,12 +289,16 @@ class SearchAgent:
         
         for task in search_tasks:
             source_name = task['source_name']
-            source = task['source']
             query = task['query']
             location_str = task['location']
             remote = task['remote']
             max_results = task['max_results']
             title = task['title']
+            
+            # Create a fresh adapter instance
+            source = self._create_adapter(source_name)
+            if not source:
+                continue
             
             try:
                 logger.info(f"=== SEARCHING {source_name.upper()} ===")
@@ -342,12 +346,17 @@ class SearchAgent:
         def execute_search(task: Dict) -> tuple[List[JobListing], str]:
             """Execute a single search task."""
             source_name = task['source_name']
-            source = task['source']
             query = task['query']
             location_str = task['location']
             remote = task['remote']
             max_results = task['max_results']
             title = task['title']
+            
+            # Create a fresh adapter instance for this thread to ensure thread safety
+            # (Playwright sync API is not thread-safe when sharing instances)
+            source = self._create_adapter(source_name)
+            if not source:
+                return [], source_name
             
             try:
                 logger.info(f"=== SEARCHING {source_name.upper()} (parallel) ===")
@@ -372,11 +381,11 @@ class SearchAgent:
                         step=f"search_{source_name}",
                     )
                 return [], source_name
-        
+
         # Execute searches in parallel
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_task = {executor.submit(execute_search, task): task for task in search_tasks}
-            
+
             for future in concurrent.futures.as_completed(future_to_task, timeout=self.search_timeout * len(search_tasks)):
                 task = future_to_task[future]
                 try:
@@ -388,5 +397,68 @@ class SearchAgent:
                     logger.error(f"Search task timed out: {task['source_name']} - {task['query']}")
                 except Exception as e:
                     logger.error(f"Search task failed: {task['source_name']} - {task['query']}: {e}", exc_info=True)
-        
+
         return all_jobs, sources_searched
+
+    def _create_adapter(self, source_name: str):
+        """Create a fresh instance of a job source adapter."""
+        job_sources_config = config.get_job_sources_config()
+        
+        # Get profile for credentials override
+        from app.user_profile import get_user_profile
+        from app.security import get_fernet
+        try:
+            profile = get_user_profile(self.db)
+            profile_li_user = profile.linkedin_user if profile else None
+            profile_li_pass = None
+            if profile and profile.linkedin_password:
+                try:
+                    fernet = get_fernet()
+                    profile_li_pass = fernet.decrypt(profile.linkedin_password.encode()).decode()
+                except Exception as e:
+                    logger.error(f"Failed to decrypt LinkedIn password: {e}")
+        except Exception as e:
+            logger.warning(f"Error fetching profile credentials: {e}")
+            profile_li_user = None
+            profile_li_pass = None
+
+        if source_name == "linkedin":
+            linkedin_config = job_sources_config.get("linkedin", {}).copy()
+            if config.apify_api_key:
+                linkedin_config["apify_api_key"] = config.apify_api_key
+            if config.mantiks_api_key:
+                linkedin_config["mantiks_api_key"] = config.mantiks_api_key
+            if config.linkedin_email:
+                linkedin_config["linkedin_email"] = config.linkedin_email
+            if config.linkedin_password:
+                linkedin_config["linkedin_password"] = config.linkedin_password
+            if profile_li_user:
+                linkedin_config["linkedin_email"] = profile_li_user
+            if profile_li_pass:
+                linkedin_config["linkedin_password"] = profile_li_pass
+            return LinkedInAdapter(config=linkedin_config, api_key=config.linkedin_api_key)
+            
+        elif source_name == "indeed":
+            indeed_config = job_sources_config.get("indeed", {}).copy()
+            if config.scrapeops_api_key:
+                indeed_config["scrapeops_api_key"] = config.scrapeops_api_key
+            if config.hasdata_api_key:
+                indeed_config["hasdata_api_key"] = config.hasdata_api_key
+            return IndeedAdapter(config=indeed_config, api_key=config.indeed_api_key)
+            
+        elif source_name == "wellfound":
+            return WellfoundAdapter(config=job_sources_config.get("wellfound", {}), api_key=config.wellfound_api_key)
+            
+        elif source_name == "monster":
+            monster_config = job_sources_config.get("monster", {}).copy()
+            if config.scrapeops_api_key:
+                monster_config["scrapeops_api_key"] = config.scrapeops_api_key
+            return MonsterAdapter(config=monster_config)
+            
+        elif source_name == "greenhouse":
+            return GreenhouseAdapter(config=job_sources_config.get("greenhouse", {}))
+            
+        elif source_name == "workday":
+            return WorkdayAdapter(config=job_sources_config.get("workday", {}))
+
+        return None

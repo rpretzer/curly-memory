@@ -37,8 +37,6 @@ class IndeedAdapter(BaseJobSource):
         self.base_url = "https://www.indeed.com"
         self.session = requests.Session()
         self.use_playwright = config.get("use_playwright", False) if config else False
-        self._playwright = None
-        self._browser = None
         
         # Third-party API support
         self.use_scrapeops = config.get("use_scrapeops", False) if config else False
@@ -487,191 +485,98 @@ class IndeedAdapter(BaseJobSource):
             
             logger.info("=== STARTING INDEED PLAYWRIGHT SCRAPING ===")
             
-            if not self._playwright:
-                self._playwright = sync_playwright().start()
+            jobs = []
+            with sync_playwright() as p:
                 # Launch with stealth settings to avoid detection
-                self._browser = self._playwright.chromium.launch(
+                browser = p.chromium.launch(
                     headless=False,  # Use non-headless to avoid detection
                     args=['--disable-blink-features=AutomationControlled']
                 )
-            
-            page = self._browser.new_page()
-            # Set realistic headers to avoid detection
-            page.set_extra_http_headers({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-            })
-            # Remove webdriver flag
-            page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-            """)
-            
-            # Build search URL
-            search_url = f"{self.base_url}/jobs"
-            params = {
-                'q': query,
-            }
-            
-            if location:
-                params['l'] = location
-            
-            if remote:
-                params['remotejob'] = '1'
-            
-            # Build URL with params
-            param_str = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items()])
-            url = f"{search_url}?{param_str}"
-            
-            logger.info(f"Navigating to Indeed with Playwright: {url}")
-            # Use 'load' instead of 'networkidle' - Indeed may have continuous network activity
-            try:
-                page.goto(url, wait_until='load', timeout=60000)
-                logger.info("Page loaded, waiting for JavaScript to render...")
-            except Exception as e:
-                logger.warning(f"Page load timeout, but continuing anyway: {e}")
-                # Page may have partially loaded
-            
-            # Give time for JavaScript to render
-            time.sleep(8)  # Increased wait time for JS rendering
-            
-            # Wait for page to be interactive
-            try:
-                page.wait_for_load_state('domcontentloaded', timeout=5000)
-            except Exception:
-                logger.debug("domcontentloaded timeout (may be OK)")
-                pass
-            
-            jobs = []
-            page_num = 0
-            max_pages = max(5, (max_results // 15) + 1)  # Indeed shows ~15 jobs per page
-            
-            while len(jobs) < max_results and page_num < max_pages:
-                logger.info(f"=== PLAYWRIGHT PAGE {page_num + 1} ===")
                 
-                # Try to wait for any job-related elements (try multiple selectors)
-                job_found = False
-                selectors_to_wait = [
-                    'div[data-jk]',
-                    'a[href*="/viewjob"]',
-                    '.job_seen_beacon',
-                    '.jobCard',
-                    'div[id*="job"]',
-                    'ul.resultsList',
-                    '[data-testid*="job"]',
-                ]
+                context = browser.new_context(
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                )
                 
-                for selector in selectors_to_wait:
-                    try:
-                        page.wait_for_selector(selector, timeout=5000)
-                        logger.info(f"Found page element with selector: {selector}")
-                        job_found = True
-                        break
-                    except PlaywrightTimeout:
-                        continue
+                page = context.new_page()
+                # Remove webdriver flag
+                page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                """)
                 
-                if not job_found and page_num == 0:
-                    logger.warning("No job-related elements found, page may be blocked or have no results")
-                    # Try to get page title to see what we got
-                    try:
-                        title = page.title()
-                        logger.info(f"Page title: {title}")
-                    except Exception:
-                        pass
-                    break
+                # Build search URL
+                search_url = f"{self.base_url}/jobs"
+                params = {'q': query}
+                if location: params['l'] = location
+                if remote: params['remotejob'] = '1'
                 
-                # Try multiple selectors for job cards - Indeed uses various structures
-                job_cards = []
-                selectors = [
-                    'div[data-jk]',  # Primary selector
-                    'a[href*="/viewjob"]',  # Job links
-                    'a[href*="/viewjob?jk="]',  # More specific job links
-                    '.job_seen_beacon',  # Job card container
-                    '.jobCard',  # Job card class
-                    'div[class*="job"]',  # Any div with "job" in class
-                    'div[class*="result"]',  # Result containers
-                    'li[data-jk]',  # List items with job ID
-                    'div[id*="job_"]',  # Divs with job ID in id
-                    '[data-testid*="job"]',  # Elements with job test ID
-                ]
+                param_str = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items()])
+                url = f"{search_url}?{param_str}"
                 
-                for selector in selectors:
-                    try:
-                        found = page.query_selector_all(selector)
-                        if found and len(found) > 0:
-                            job_cards = found
-                            logger.info(f"✓ Found {len(job_cards)} job cards using selector: {selector}")
+                logger.info(f"Navigating to Indeed with Playwright: {url}")
+                try:
+                    page.goto(url, wait_until='load', timeout=60000)
+                except Exception as e:
+                    logger.warning(f"Page load timeout, but continuing anyway: {e}")
+                
+                time.sleep(8)
+                
+                page_num = 0
+                max_pages = max(5, (max_results // 15) + 1)
+                
+                while len(jobs) < max_results and page_num < max_pages:
+                    job_found = False
+                    selectors_to_wait = ['div[data-jk]', 'a[href*="/viewjob"]', '.job_seen_beacon']
+                    for selector in selectors_to_wait:
+                        try:
+                            page.wait_for_selector(selector, timeout=5000)
+                            job_found = True
                             break
-                    except Exception as e:
-                        logger.debug(f"Selector {selector} failed: {e}")
-                        continue
-                
-                # If still no cards, try getting all links and filtering
-                if not job_cards:
-                    logger.info("Trying alternative: looking for all links with /viewjob")
-                    all_links = page.query_selector_all('a[href]')
-                    viewjob_links = []
-                    for link in all_links:
-                        href = link.get_attribute('href') or ''
-                        if '/viewjob' in href or 'jk=' in href:
-                            viewjob_links.append(link)
-                    if viewjob_links:
-                        job_cards = viewjob_links
-                        logger.info(f"✓ Found {len(job_cards)} job links via alternative method")
-                
-                if not job_cards:
-                    logger.warning(f"No job cards found on page {page_num + 1}")
-                    break
-                
-                logger.info(f"Processing {len(job_cards)} job cards (already have {len(jobs)} jobs)")
-                
-                # Parse each card
-                parsed_count = 0
-                for card in job_cards:
-                    if len(jobs) >= max_results:
-                        break
+                        except PlaywrightTimeout: continue
                     
-                    try:
-                        job = self._parse_indeed_card_playwright(card, page)
-                        if job:
-                            # Check for duplicates
-                            if not any(j.source_url == job.source_url for j in jobs):
-                                jobs.append(job)
-                                parsed_count += 1
-                    except Exception as e:
-                        logger.warning(f"Error parsing Indeed job card: {e}")
-                        continue
-                
-                logger.info(f"Successfully parsed {parsed_count} jobs from {len(job_cards)} cards")
-                
-                # Try to go to next page if we need more results
-                if len(jobs) < max_results and len(job_cards) >= 10:  # If we got a full page
-                    try:
-                        # Look for next page button
-                        next_button = page.query_selector('a[aria-label="Next Page"], a[data-testid="pagination-page-next"], a[aria-label="Next"]')
-                        if next_button:
-                            next_button.click()
-                            page.wait_for_load_state('networkidle', timeout=10000)
-                            time.sleep(2)
-                            page_num += 1
-                        else:
-                            logger.info("No next page button found, stopping pagination")
+                    if not job_found: break
+                    
+                    job_cards = []
+                    selectors = ['div[data-jk]', 'a[href*="/viewjob"]', '.job_seen_beacon']
+                    for selector in selectors:
+                        found = page.query_selector_all(selector)
+                        if found:
+                            job_cards = found
                             break
-                    except Exception as e:
-                        logger.warning(f"Error navigating to next page: {e}")
-                        break
-                else:
-                    break
+                    
+                    if not job_cards: break
+                    
+                    for card in job_cards:
+                        if len(jobs) >= max_results: break
+                        try:
+                            job = self._parse_indeed_card_playwright(card, page)
+                            if job and not any(j.source_url == job.source_url for j in jobs):
+                                jobs.append(job)
+                        except Exception: continue
+                    
+                    if len(jobs) < max_results and len(job_cards) >= 10:
+                        try:
+                            next_button = page.query_selector('a[aria-label="Next Page"], a[aria-label="Next"]')
+                            if next_button:
+                                next_button.click()
+                                page.wait_for_load_state('networkidle', timeout=10000)
+                                time.sleep(2)
+                                page_num += 1
+                            else: break
+                        except Exception: break
+                    else: break
+                
+                browser.close()
             
-            page.close()
             logger.info(f"=== INDEED PLAYWRIGHT SCRAPING COMPLETE ===")
-            logger.info(f"Total jobs found: {len(jobs)}")
             return jobs[:max_results]
+            
+        except ImportError:
+            raise Exception("Playwright not installed.")
+        except Exception as e:
+            logger.error(f"Error in Playwright scraping: {e}", exc_info=True)
+            raise Exception(f"Failed to scrape Indeed with Playwright: {str(e)}")
             
         except ImportError:
             logger.error("Playwright not installed. Install with: pip install playwright && playwright install")

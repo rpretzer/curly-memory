@@ -20,7 +20,67 @@ logger = logging.getLogger(__name__)
 
 class LinkedInAdapter(BaseJobSource):
     """LinkedIn job search adapter."""
-    
+
+    @staticmethod
+    def _is_masked_content(title: str, company: str, description: Optional[str] = None) -> bool:
+        """
+        Check if job contains masked/placeholder content.
+
+        Args:
+            title: Job title
+            company: Company name
+            description: Job description
+
+        Returns:
+            True if content appears to be masked/placeholder
+        """
+        # Common masking patterns
+        masked_patterns = [
+            r'\*{3,}',  # Multiple asterisks (e.g., ****)
+            r'x{3,}',   # Multiple x's (e.g., xxxx)
+            r'_{3,}',   # Multiple underscores
+            r'\[REDACTED\]',
+            r'\[HIDDEN\]',
+            r'Confidential',
+        ]
+
+        # Placeholder company names
+        placeholder_companies = [
+            'Unknown Company',
+            'Company Name',
+            'Placeholder',
+            'N/A',
+            '',
+        ]
+
+        # Check for masked patterns in title and company
+        for pattern in masked_patterns:
+            if re.search(pattern, title, re.IGNORECASE):
+                logger.debug(f"Masked content detected in title: {title}")
+                return True
+            if re.search(pattern, company, re.IGNORECASE):
+                logger.debug(f"Masked content detected in company: {company}")
+                return True
+            if description and re.search(pattern, description[:500], re.IGNORECASE):  # Check first 500 chars
+                logger.debug(f"Masked content detected in description")
+                return True
+
+        # Check for placeholder company names
+        if company.strip() in placeholder_companies:
+            logger.debug(f"Placeholder company detected: {company}")
+            return True
+
+        # Check for suspiciously short or missing critical fields
+        if len(title.strip()) < 3:
+            logger.debug(f"Title too short: {title}")
+            return True
+
+        if len(company.strip()) < 2:
+            logger.debug(f"Company name too short: {company}")
+            return True
+
+        return False
+
     def __init__(self, config: Optional[Dict] = None, api_key: Optional[str] = None):
         """
         Initialize LinkedIn adapter.
@@ -35,8 +95,6 @@ class LinkedInAdapter(BaseJobSource):
         self.timeout = config.get("timeout_seconds", 60) if config else 60
         self.base_url = "https://www.linkedin.com"
         self.use_playwright = config.get("use_playwright", False) if config else False  # Disabled by default
-        self._playwright = None
-        self._browser = None
         self._logged_in = False
         
         # LinkedIn credentials for authenticated access
@@ -191,28 +249,26 @@ class LinkedInAdapter(BaseJobSource):
             raise Exception("Playwright required for connection crawling. Enable use_playwright in config.")
         
         if not self.linkedin_email or not self.linkedin_password:
-            raise Exception("LinkedIn credentials required for connection crawling. Set LINKEDIN_EMAIL and LINKEDIN_PASSWORD in .env")
+            raise Exception("LinkedIn credentials required for connection crawling. Set LINKEDIN_EMAIL and LINKEDIN_PASSWORD in .env or Profile")
         
         try:
             from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
             
             logger.info("=== STARTING LINKEDIN CONNECTION CRAWLING ===")
             
-            if not self._playwright:
-                self._playwright = sync_playwright().start()
-                self._browser = self._playwright.chromium.launch(headless=False)
-            
-            page = self._browser.new_page()
-            page.set_extra_http_headers({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            })
-            
-            # Login first
-            if not self._logged_in:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True) # Connections crawling can be headless
+                context = browser.new_context(
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                )
+                page = context.new_page()
+                
+                # Login first
                 self._login_linkedin(page)
-            
-            if not self._logged_in:
-                raise Exception("Failed to login to LinkedIn")
+                
+                if not self._logged_in:
+                    browser.close()
+                    raise Exception("Failed to login to LinkedIn")
             
             # Navigate to connections page
             logger.info("Navigating to LinkedIn connections...")
@@ -408,163 +464,113 @@ class LinkedInAdapter(BaseJobSource):
         try:
             from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
             
-            if not self._playwright:
-                self._playwright = sync_playwright().start()
-                # Use headless=False to avoid detection and allow login
-                self._browser = self._playwright.chromium.launch(headless=False)
-            
-            page = self._browser.new_page()
-            page.set_extra_http_headers({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            })
-            
-            # Login if credentials are provided
-            if self.linkedin_email and self.linkedin_password:
-                self._login_linkedin(page)
-            
-            # Build search URL
-            search_url = f"{self.base_url}/jobs/search"
-            params = {
-                'keywords': query,
-            }
-            
-            if location:
-                params['location'] = location
-            
-            if remote:
-                params['f_WT'] = '2'  # Remote filter
-            
-            # Build URL with params
-            param_str = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items()])
-            url = f"{search_url}?{param_str}"
-            
-            logger.info(f"Navigating to LinkedIn: {url}")
-            page.goto(url, wait_until='networkidle', timeout=self.timeout * 1000)
-            time.sleep(3)  # Wait for dynamic content (longer if logged in)
-            
             jobs = []
-            scroll_attempts = 0
-            seen_urls = set()  # Track URLs to avoid duplicates
-            consecutive_no_new = 0  # Track consecutive rounds with no new jobs
-            # Increase max scrolls significantly to fetch more results
-            max_scrolls = max(30, max_results // 2)  # More aggressive scrolling - aim for 2x results to get max_results unique
-            max_consecutive_empty = 5  # Stop after 5 consecutive rounds with no new jobs
-            
-            logger.info(f"Starting job collection (target: {max_results} jobs, max scrolls: {max_scrolls})")
-            
-            while len(jobs) < max_results and scroll_attempts < max_scrolls and consecutive_no_new < max_consecutive_empty:
-                logger.debug(f"Scroll attempt {scroll_attempts + 1}/{max_scrolls}, currently have {len(jobs)} jobs")
+            with sync_playwright() as p:
+                # Use headless=False to avoid detection and allow login
+                browser = p.chromium.launch(headless=False)
+                context = browser.new_context(
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                )
+                page = context.new_page()
                 
-                # Find job cards with multiple selector attempts
-                job_cards = []
-                selectors = [
-                    'div[data-job-id]',
-                    'div.job-card-container',
-                    'li.jobs-search-results__list-item',
-                    'div[data-entity-urn*="jobPosting"]',
-                    'ul.jobs-search__results-list li',
-                    'div.job-result-card',
-                ]
+                # Login if credentials are provided
+                if self.linkedin_email and self.linkedin_password:
+                    self._login_linkedin(page)
                 
-                for selector in selectors:
-                    found = page.query_selector_all(selector)
-                    if found:
-                        job_cards = found
-                        logger.debug(f"Found {len(job_cards)} job cards using selector: {selector}")
-                        break
+                # Build search URL
+                search_url = f"{self.base_url}/jobs/search"
+                params = {
+                    'keywords': query,
+                }
                 
-                if not job_cards:
-                    logger.warning(f"No job cards found on scroll attempt {scroll_attempts + 1}")
-                    # Try scrolling anyway to load more content
-                    page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                    time.sleep(2)  # Reduced wait time
-                    scroll_attempts += 1
-                    consecutive_no_new += 1
-                    continue
+                if location:
+                    params['location'] = location
                 
-                # Parse each job card
-                parsed_this_round = 0
-                jobs_before_round = len(jobs)
+                if remote:
+                    params['f_WT'] = '2'  # Remote filter
                 
-                for card in job_cards:
-                    if len(jobs) >= max_results:
-                        break
+                # Build URL with params
+                param_str = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items()])
+                url = f"{search_url}?{param_str}"
+                
+                logger.info(f"Navigating to LinkedIn: {url}")
+                page.goto(url, wait_until='networkidle', timeout=self.timeout * 1000)
+                time.sleep(3)  # Wait for dynamic content (longer if logged in)
+                
+                scroll_attempts = 0
+                seen_urls = set()  # Track URLs to avoid duplicates
+                consecutive_no_new = 0  # Track consecutive rounds with no new jobs
+                # Increase max scrolls significantly to fetch more results
+                max_scrolls = max(30, max_results // 2)  # More aggressive scrolling
+                max_consecutive_empty = 5  # Stop after 5 consecutive rounds with no new jobs
+                
+                logger.info(f"Starting job collection (target: {max_results} jobs, max scrolls: {max_scrolls})")
+                
+                while len(jobs) < max_results and scroll_attempts < max_scrolls and consecutive_no_new < max_consecutive_empty:
+                    # Find job cards with multiple selector attempts
+                    job_cards = []
+                    selectors = [
+                        'div[data-job-id]',
+                        'div.job-card-container',
+                        'li.jobs-search-results__list-item',
+                        'div[data-entity-urn*="jobPosting"]',
+                        'ul.jobs-search__results-list li',
+                        'div.job-result-card',
+                    ]
                     
-                    try:
-                        job = self._parse_linkedin_card(card, page)
-                        if job:
-                            # Check for duplicates by URL
-                            if job.source_url not in seen_urls:
-                                seen_urls.add(job.source_url)
-                                jobs.append(job)
-                                parsed_this_round += 1
-                            else:
-                                logger.debug(f"Skipping duplicate job: {job.title}")
-                    except Exception as e:
-                        logger.debug(f"Error parsing LinkedIn job card: {e}")
+                    for selector in selectors:
+                        found = page.query_selector_all(selector)
+                        if found:
+                            job_cards = found
+                            break
+                    
+                    if not job_cards:
+                        page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                        time.sleep(2)
+                        scroll_attempts += 1
+                        consecutive_no_new += 1
                         continue
-                
-                # Check if we got new jobs this round
-                if parsed_this_round > 0:
-                    consecutive_no_new = 0
-                else:
-                    consecutive_no_new += 1
-                
-                logger.info(f"Parsed {parsed_this_round} new jobs this round (total: {len(jobs)}/{max_results}, consecutive empty: {consecutive_no_new})")
-                
-                # Scroll to load more jobs
-                if len(jobs) < max_results and consecutive_no_new < max_consecutive_empty:
-                    # Scroll smoothly to trigger lazy loading
-                    page.evaluate('''
-                        window.scrollTo({
-                            top: document.body.scrollHeight,
-                            behavior: 'smooth'
-                        });
-                    ''')
-                    time.sleep(2)  # Reduced wait time for faster collection
                     
-                    # Also try clicking "Show more" button if it exists
-                    try:
-                        show_more_selectors = [
-                            'button.infinite-scroller__show-more-button',
-                            'button[aria-label*="Show more"]',
-                            'button[aria-label*="Load more"]',
-                            'button.jobs-search-results__pagination-next-button',
-                        ]
-                        for selector in show_more_selectors:
-                            show_more = page.query_selector(selector)
-                            if show_more and show_more.is_visible():
-                                show_more.click()
-                                time.sleep(2)
-                                break
-                    except Exception as e:
-                        logger.debug(f"Could not click show more button: {e}")
+                    # Parse each job card
+                    parsed_this_round = 0
+                    for card in job_cards:
+                        if len(jobs) >= max_results:
+                            break
+                        
+                        try:
+                            job = self._parse_linkedin_card(card, page)
+                            if job:
+                                if job.source_url not in seen_urls:
+                                    seen_urls.add(job.source_url)
+                                    jobs.append(job)
+                                    parsed_this_round += 1
+                        except Exception:
+                            continue
                     
-                    # Also try pagination if available
-                    try:
-                        next_button = page.query_selector('button[aria-label="Next"], a[aria-label="Next"]')
-                        if next_button and next_button.is_visible():
-                            next_button.click()
-                            time.sleep(3)
-                    except Exception:
-                        pass
+                    # Check if we got new jobs this round
+                    if parsed_this_round > 0:
+                        consecutive_no_new = 0
+                    else:
+                        consecutive_no_new += 1
                     
-                    scroll_attempts += 1
-                else:
-                    if consecutive_no_new >= max_consecutive_empty:
-                        logger.info(f"Stopping: {consecutive_no_new} consecutive rounds with no new jobs")
-                    break
+                    # Scroll to load more jobs
+                    if len(jobs) < max_results and consecutive_no_new < max_consecutive_empty:
+                        page.evaluate('window.scrollTo({top: document.body.scrollHeight, behavior: "smooth"});')
+                        time.sleep(2)
+                        scroll_attempts += 1
+                    else:
+                        break
+                
+                browser.close()
             
-            page.close()
             logger.info(f"Found {len(jobs)} jobs from LinkedIn")
             return jobs[:max_results]
             
         except ImportError:
-            logger.error("Playwright not installed. Install with: pip install playwright && playwright install")
-            raise Exception("Playwright not installed. Required for LinkedIn scraping. Install with: pip install playwright && playwright install chromium")
+            raise Exception("Playwright not installed. Required for LinkedIn scraping.")
         except Exception as e:
             logger.error(f"Error in Playwright scraping: {e}", exc_info=True)
-            raise Exception(f"Failed to scrape LinkedIn with Playwright: {str(e)}. Check Playwright installation and LinkedIn login requirements.")
+            raise Exception(f"Failed to scrape LinkedIn with Playwright: {str(e)}")
     
     def _parse_linkedin_card(self, card, page) -> Optional[JobListing]:
         """Parse a job card from LinkedIn."""
@@ -627,7 +633,12 @@ class LinkedInAdapter(BaseJobSource):
             
             # Extract keywords
             keywords = self.extract_keywords(f"{title} {description or ''}")
-            
+
+            # Check for masked content before creating job listing
+            if self._is_masked_content(title, company, description):
+                logger.debug(f"Rejecting job with masked content: {title} @ {company}")
+                return None
+
             return JobListing(
                 title=title,
                 company=company,
@@ -730,11 +741,20 @@ class LinkedInAdapter(BaseJobSource):
     def _normalize_mantiks_job(self, raw_job: Dict[str, Any]) -> Optional[JobListing]:
         """Normalize a job from Mantiks API."""
         try:
+            title = raw_job.get('title', '')
+            company = raw_job.get('company', '')
+            description = raw_job.get('description') or raw_job.get('summary')
+
+            # Check for masked content
+            if self._is_masked_content(title, company, description):
+                logger.debug(f"Rejecting Mantiks job with masked content: {title} @ {company}")
+                return None
+
             return JobListing(
-                title=raw_job.get('title', ''),
-                company=raw_job.get('company', ''),
+                title=title,
+                company=company,
                 location=raw_job.get('location'),
-                description=raw_job.get('description') or raw_job.get('summary'),
+                description=description,
                 raw_description=raw_job.get('description'),
                 keywords=self.extract_keywords(raw_job.get('description', '')),
                 salary_min=raw_job.get('salary_min'),
@@ -872,8 +892,8 @@ class LinkedInAdapter(BaseJobSource):
             company = company_elem.get_text(strip=True) if company_elem else "Unknown Company"
             
             # Check for masked content
-            if "****" in title or "****" in company:
-                raise ValueError("Masked content detected")
+            if self._is_masked_content(title, company, description):
+                raise ValueError("Masked content detected - job rejected")
             
             # Location
             location_elem = (

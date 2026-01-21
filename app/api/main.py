@@ -1010,11 +1010,11 @@ async def upload_resume(
                     text_parts.append(page.extract_text())
                 text_content = "\n".join(text_parts)
             except ImportError:
-                logger.warning("PyPDF2 not installed, falling back to text extraction")
-                text_content = content.decode('utf-8', errors='ignore')
+                logger.warning("PyPDF2 not installed. Unable to extract text from PDF.")
+                text_content = ""
             except Exception as e:
-                logger.warning(f"Error parsing PDF: {e}, falling back to text extraction")
-                text_content = content.decode('utf-8', errors='ignore')
+                logger.warning(f"Error parsing PDF: {e}. Unable to extract text.")
+                text_content = ""
         elif file_ext in {'.docx', '.doc'}:
             try:
                 from docx import Document
@@ -1026,11 +1026,11 @@ async def upload_resume(
                     text_parts.append(para.text)
                 text_content = "\n".join(text_parts)
             except ImportError:
-                logger.warning("python-docx not installed, falling back to text extraction")
-                text_content = content.decode('utf-8', errors='ignore')
+                logger.warning("python-docx not installed. Unable to extract text from DOCX/DOC.")
+                text_content = ""
             except Exception as e:
-                logger.warning(f"Error parsing DOCX: {e}, falling back to text extraction")
-                text_content = content.decode('utf-8', errors='ignore')
+                logger.warning(f"Error parsing DOCX: {e}. Unable to extract text.")
+                text_content = ""
         else:
             # Plain text file
             text_content = content.decode('utf-8', errors='ignore')

@@ -46,7 +46,7 @@ llm:
   ollama_base_url: http://localhost:11434
 job_sources:
   linkedin:
-    enabled: true
+    enabled: false  # Temporarily disabled - scraping is being blocked
     max_results: 150  # Increased from 100 for more results
     rate_limit_delay: 2  # Reduced from 3 for faster searches (be careful with rate limits)
     timeout_seconds: 90  # Increased timeout for more thorough searches

@@ -16,9 +16,14 @@ const settingsPage = {
             this.schedulerStatus = schedulerStatus;
 
             content.innerHTML = `
-                <div class="page-header">
-                    <h2>Settings</h2>
-                    <p>Configure your profile and preferences</p>
+                <div class="page-header flex-between">
+                    <div>
+                        <h2>Settings</h2>
+                        <p>Configure your profile and preferences</p>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="router.navigate('/onboarding')">
+                        View Onboarding
+                    </button>
                 </div>
 
                 <div class="tabs">
@@ -491,10 +496,12 @@ const settingsPage = {
                     </div>
                 </div>
 
-                <div class="flex-end gap-2 mt-4">
-                    <button type="button" class="btn btn-secondary" onclick="settingsPage.showTab('scheduler')">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Schedule</button>
-                </div>
+                ${schedule.enabled ? `
+                    <div class="flex-end gap-2 mt-4">
+                        <button type="button" class="btn btn-secondary" onclick="settingsPage.showTab('scheduler')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Schedule</button>
+                    </div>
+                ` : ''}
 
                 ${schedule.enabled ? `
                     <div class="card mt-2 p-3" style="background: rgba(251, 191, 36, 0.1); border: 1px solid var(--warning);">

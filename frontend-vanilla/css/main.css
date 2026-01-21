@@ -415,6 +415,41 @@ tr:hover td {
     flex-shrink: 0;
 }
 
+/* Input with prefix (e.g., $ for currency) */
+.input-with-prefix {
+    display: flex;
+    align-items: stretch;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.input-with-prefix .input-prefix {
+    display: flex;
+    align-items: center;
+    padding: 0 0.75rem;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border-right: 1px solid var(--border);
+    font-weight: 500;
+}
+
+.input-with-prefix .form-input {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+}
+
+.input-with-prefix .form-input:focus {
+    border: none;
+    box-shadow: none;
+}
+
+.input-with-prefix:focus-within {
+    border-color: var(--accent);
+}
+
 /* Score Badge */
 .score {
     display: inline-flex;

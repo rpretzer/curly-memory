@@ -70,7 +70,7 @@ class APIConfig(BaseSettings):
     host: str = Field(default="0.0.0.0", validation_alias="API_HOST")
     port: int = Field(default=8000, validation_alias="API_PORT")
     cors_origins: str = Field(
-        default="http://localhost:3000", 
+        default="http://localhost:3000,http://localhost:8080", 
         validation_alias="CORS_ORIGINS"
     )
 
@@ -119,6 +119,10 @@ class Config:
         self.langsmith_api_key = os.getenv("LANGSMITH_API_KEY", "")
         self.langsmith_project = os.getenv("LANGSMITH_PROJECT", "job-search-pipeline")
     
+    def reload(self):
+        """Reload configuration from YAML and environment."""
+        self.__init__()
+
     def get_search_config(self) -> Dict:
         """Get search configuration from YAML."""
         return self.yaml_config.get("search", {})

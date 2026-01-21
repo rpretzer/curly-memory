@@ -41,8 +41,6 @@ class MonsterAdapter(BaseJobSource):
             self.base_url = "https://www.monster.com"
         self.session = requests.Session()
         self.use_playwright = config.get("use_playwright", False) if config else False
-        self._playwright = None
-        self._browser = None
         
         # Third-party API support
         self.use_scrapeops = config.get("use_scrapeops", False) if config else False

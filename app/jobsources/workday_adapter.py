@@ -106,8 +106,8 @@ class WorkdayAdapter(BaseJobSource):
             if len(all_jobs) >= max_results:
                 break
 
-            # Unpack company configuration
-            if isinstance(company_config, tuple) and len(company_config) >= 4:
+            # Unpack company configuration - accept tuple, list, or dict
+            if (isinstance(company_config, (tuple, list)) and len(company_config) >= 4):
                 company_slug, wd_instance, site_name, display_name = company_config[:4]
             elif isinstance(company_config, dict):
                 company_slug = company_config.get("slug")
@@ -408,7 +408,7 @@ class WorkdayAdapter(BaseJobSource):
         """Return the list of configured companies with their details."""
         result = []
         for company_config in self.companies:
-            if isinstance(company_config, tuple) and len(company_config) >= 4:
+            if isinstance(company_config, (tuple, list)) and len(company_config) >= 4:
                 result.append({
                     "slug": company_config[0],
                     "instance": company_config[1],
