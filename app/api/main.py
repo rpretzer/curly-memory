@@ -269,6 +269,7 @@ class UserProfileUpdate(BaseModel):
     linkedin_password: Optional[str] = None
     portfolio_url: Optional[str] = None
     github_url: Optional[str] = None
+    other_links: Optional[List[str]] = None
     current_title: Optional[str] = None
     target_titles: Optional[List[str]] = None
     skills: Optional[List[str]] = None
@@ -905,6 +906,7 @@ async def get_profile(
         "has_linkedin_password": bool(profile.linkedin_password),
         "portfolio_url": profile.portfolio_url,
         "github_url": profile.github_url,
+        "other_links": profile.other_links or [],
         "current_title": profile.current_title,
         "target_titles": profile.target_titles or [],
         "skills": profile.skills or [],
@@ -965,6 +967,7 @@ async def update_profile(
         "has_linkedin_password": bool(profile.linkedin_password),
         "portfolio_url": profile.portfolio_url,
         "github_url": profile.github_url,
+        "other_links": profile.other_links or [],
         "current_title": profile.current_title,
         "target_titles": profile.target_titles or [],
         "skills": profile.skills or [],

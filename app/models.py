@@ -229,6 +229,7 @@ class UserProfile(Base):
     linkedin_password = Column(Text, nullable=True)     # Encrypted Password
     portfolio_url = Column(String(500), nullable=True)
     github_url = Column(String(500), nullable=True)
+    other_links = Column(JSON, nullable=True)  # Additional links (personal website, blog, etc.)
     
     # Professional information
     current_title = Column(String(200), nullable=True)

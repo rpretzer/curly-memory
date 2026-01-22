@@ -155,6 +155,17 @@ const settingsPage = {
                     ${field('LinkedIn Profile', profile.linkedin_url ? `<a href="${components.escapeHtml(profile.linkedin_url)}" target="_blank" class="text-primary hover:underline">View Profile</a>` : null)}
                 </div>
 
+                <div class="grid grid-cols-2 gap-4 mt-2">
+                    ${field('Portfolio', profile.portfolio_url ? `<a href="${components.escapeHtml(profile.portfolio_url)}" target="_blank" class="text-primary hover:underline">View Portfolio</a>` : null)}
+                    ${field('GitHub', profile.github_url ? `<a href="${components.escapeHtml(profile.github_url)}" target="_blank" class="text-primary hover:underline">View GitHub</a>` : null)}
+                </div>
+
+                ${(profile.other_links && profile.other_links.length > 0) ? `
+                    <div class="mt-2">
+                        ${field('Other Links', (profile.other_links || []).map(link => `<a href="${components.escapeHtml(link)}" target="_blank" class="text-primary hover:underline block">${components.escapeHtml(link)}</a>`).join(' '))}
+                    </div>
+                ` : ''}
+
                 <div class="mt-2">
                     ${field('Target Titles', (profile.target_titles || []).map(t => `<span class="chip chip-blue">${components.escapeHtml(t)}</span>`).join(' '))}
                 </div>
@@ -226,12 +237,24 @@ const settingsPage = {
                     <div class="form-group">
                         <label class="form-label">LinkedIn URL</label>
                         <input type="url" class="form-input" name="linkedin_url"
-                            value="${components.escapeHtml(profile.linkedin_url || '')}">
+                            value="${components.escapeHtml(profile.linkedin_url || '')}" placeholder="https://linkedin.com/in/yourprofile">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Portfolio/Website</label>
                         <input type="url" class="form-input" name="portfolio_url"
-                            value="${components.escapeHtml(profile.portfolio_url || '')}">
+                            value="${components.escapeHtml(profile.portfolio_url || '')}" placeholder="https://yourportfolio.com">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">GitHub URL</label>
+                        <input type="url" class="form-input" name="github_url"
+                            value="${components.escapeHtml(profile.github_url || '')}" placeholder="https://github.com/yourusername">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Other Links</label>
+                        <div id="other-links-chip-input"></div>
                     </div>
                 </div>
 
@@ -686,6 +709,7 @@ const settingsPage = {
         setupChipInput('target-companies-chip-input', profile.target_companies || [], 'purple', SUGGESTIONS.companies);
         setupChipInput('must-have-keywords-chip-input', profile.must_have_keywords || [], 'red', SUGGESTIONS.keywords);
         setupChipInput('nice-to-have-keywords-chip-input', profile.nice_to_have_keywords || [], 'yellow', SUGGESTIONS.keywords);
+        setupChipInput('other-links-chip-input', profile.other_links || [], 'blue', []);
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -705,6 +729,8 @@ const settingsPage = {
                 location: formData.get('location'),
                 linkedin_url: formData.get('linkedin_url'),
                 portfolio_url: formData.get('portfolio_url'),
+                github_url: formData.get('github_url'),
+                other_links: window.chipInputs['other-links']?.getItems() || [],
                 current_title: formData.get('current_title'),
                 target_titles: window.chipInputs['target-titles']?.getItems() || [],
                 skills: window.chipInputs['skills']?.getItems() || [],
