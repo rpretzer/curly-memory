@@ -240,6 +240,21 @@ body.light-mode {
     gap: 1rem;
 }
 
+.input-group {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.input-group .form-input {
+    flex: 1;
+}
+
+.input-group .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
 /* Buttons */
 .btn {
     display: inline-flex;
