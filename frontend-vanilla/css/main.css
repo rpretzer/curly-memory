@@ -439,6 +439,10 @@ body.light-mode {
 }
 
 /* Chips */
+.chip-input-wrapper {
+    width: 100%;
+}
+
 .chip-container {
     display: flex;
     flex-wrap: wrap;

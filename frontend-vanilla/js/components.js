@@ -482,17 +482,19 @@ const components = {
 
         return {
             html: `
-                <div class="chip-container" id="${containerId}">
-                    ${items.map((item, idx) => this.chip(item, color, `window.chipInputs['${id}'].remove(${idx})`)).join('')}
-                </div>
-                <div class="input-group">
-                    <input
-                        type="text"
-                        id="${inputId}"
-                        class="form-input"
-                        placeholder="Type to add..."
-                    />
-                    <button type="button" id="${buttonId}" class="btn btn-${addButtonColor}">Add</button>
+                <div class="chip-input-wrapper">
+                    <div class="chip-container" id="${containerId}">
+                        ${items.map((item, idx) => this.chip(item, color, `window.chipInputs['${id}'].remove(${idx})`)).join('')}
+                    </div>
+                    <div class="input-group">
+                        <input
+                            type="text"
+                            id="${inputId}"
+                            class="form-input"
+                            placeholder="Type to add..."
+                        />
+                        <button type="button" id="${buttonId}" class="btn btn-${addButtonColor}">Add</button>
+                    </div>
                 </div>
             `,
 
