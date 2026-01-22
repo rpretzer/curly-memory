@@ -57,6 +57,7 @@ class AutoApplyService:
         """
         # Check if this is first initialization
         first_init = not hasattr(self, '_initialized') or not self._initialized
+        logger.debug(f"AutoApplyService.__init__ called: first_init={first_init}, instance_id={id(self)}")
 
         if first_init:
             # First time initialization - set up all components
@@ -74,6 +75,13 @@ class AutoApplyService:
             self._rate_limit_delay = rate_limit_delay
             self._max_applications_per_hour = max_applications_per_hour
 
+            # Create queue manager ONCE - critical for maintaining queue state
+            self.queue_manager = ApplicationQueueManager(
+                db=db,
+                rate_limit_delay=rate_limit_delay,
+                max_applications_per_hour=max_applications_per_hour,
+            )
+
             self._initialized = True
             logger.info("AutoApplyService initialized")
 
@@ -82,16 +90,15 @@ class AutoApplyService:
         self.db = db
         self.log_agent = log_agent
 
-        # Recreate components with fresh database session
+        # Recreate components with fresh database session (but NOT queue_manager)
         self.apply_agent = ApplyAgent(db, log_agent)
-        self.queue_manager = ApplicationQueueManager(
-            db=db,
-            rate_limit_delay=getattr(self, '_rate_limit_delay', rate_limit_delay),
-            max_applications_per_hour=getattr(self, '_max_applications_per_hour', max_applications_per_hour),
-        )
         self.template_manager = ApplicationTemplateManager(db)
 
-        # Set up queue callbacks
+        # Update queue manager's database session without recreating it
+        if hasattr(self, 'queue_manager'):
+            self.queue_manager.db = db
+
+        # Set up queue callbacks (always refresh these)
         self.queue_manager.on_application_start = self._on_application_start
         self.queue_manager.on_application_success = self._on_application_success
         self.queue_manager.on_application_failure = self._on_application_failure
@@ -326,6 +333,11 @@ class AutoApplyService:
     def get_status(self) -> Dict[str, Any]:
         """Get current service status."""
         queue_status = self.queue_manager.get_queue_status()
+        logger.debug(
+            f"get_status called: instance_id={id(self)}, "
+            f"queue_manager_id={id(self.queue_manager)}, "
+            f"queue_size={queue_status['queue_size']}"
+        )
 
         return {
             "enabled": self.enabled,

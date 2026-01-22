@@ -615,9 +615,27 @@ async def bulk_approve_jobs(
     for job in jobs:
         job.approved = True
         count += 1
-    
+
     db.commit()
-    return {"status": "approved", "count": count}
+
+    # Auto-queue approved jobs if auto-apply is enabled
+    queued_count = 0
+    try:
+        from app.services.auto_apply_service import AutoApplyService
+        from app.agents.log_agent import LogAgent
+
+        log_agent = LogAgent(db)
+        service = AutoApplyService(db, log_agent)
+
+        if service.enabled:
+            # Queue all approved jobs
+            queued_count = service.queue_manager.add_jobs(jobs)
+            if queued_count > 0:
+                logger.info(f"Auto-queued {queued_count} jobs for application")
+    except Exception as e:
+        logger.warning(f"Failed to auto-queue jobs: {e}")
+
+    return {"status": "approved", "count": count, "queued": queued_count}
 
 
 @app.post("/jobs/bulk-reject")
@@ -685,10 +703,28 @@ async def approve_job(
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    
+
     job.approved = True
     db.commit()
-    return {"status": "approved", "job_id": job_id}
+
+    # Auto-queue for application if auto-apply is enabled
+    try:
+        from app.services.auto_apply_service import AutoApplyService
+        from app.agents.log_agent import LogAgent
+
+        log_agent = LogAgent(db)
+        service = AutoApplyService(db, log_agent)
+
+        if service.enabled:
+            # Queue this specific job
+            queued = service.queue_manager.add_job(job)
+            if queued:
+                logger.info(f"Auto-queued job {job_id} for application")
+                return {"status": "approved", "job_id": job_id, "queued": True}
+    except Exception as e:
+        logger.warning(f"Failed to auto-queue job {job_id}: {e}")
+
+    return {"status": "approved", "job_id": job_id, "queued": False}
 
 
 @app.post("/jobs/{job_id}/reject")

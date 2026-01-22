@@ -139,7 +139,7 @@ pipeline:
 
 features:
   enable_playwright: true
-  enable_auto_apply: false
+  enable_auto_apply: true  # Auto-queue jobs when approved
   enable_content_generation: true
   enable_email_notifications: false
 scheduler:
