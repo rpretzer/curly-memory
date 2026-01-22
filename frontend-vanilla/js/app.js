@@ -16,8 +16,14 @@
 
     // Initialize router when DOM is ready
     document.addEventListener('DOMContentLoaded', async () => {
+        // Apply saved theme immediately
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        if (savedTheme === 'light') {
+            document.body.classList.add('light-mode');
+        }
+
         router.init();
-        
+
         try {
             const profile = await api.getProfile();
             if (!profile.is_onboarded && window.location.hash !== '#/onboarding') {
@@ -27,7 +33,7 @@
         } catch (e) {
             console.error('Failed to check onboarding status:', e);
         }
-        
+
         console.log('Job Search Pipeline initialized');
     });
 

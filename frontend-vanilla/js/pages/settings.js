@@ -31,6 +31,7 @@ const settingsPage = {
                     <button class="tab" onclick="settingsPage.showTab('search')">Search Parameters</button>
                     <button class="tab" onclick="settingsPage.showTab('autoapply')">Auto-Apply</button>
                     <button class="tab" onclick="settingsPage.showTab('scheduler')">Scheduler</button>
+                    <button class="tab" onclick="settingsPage.showTab('preferences')">Preferences</button>
                 </div>
 
                 <div id="settingsContent">
@@ -49,7 +50,8 @@ const settingsPage = {
                 (tab === 'profile' && i === 0) ||
                 (tab === 'search' && i === 1) ||
                 (tab === 'autoapply' && i === 2) ||
-                (tab === 'scheduler' && i === 3)
+                (tab === 'scheduler' && i === 3) ||
+                (tab === 'preferences' && i === 4)
             );
         });
 
@@ -103,6 +105,9 @@ const settingsPage = {
                     settingsContent.innerHTML = this.renderSchedulerTab({ running: false });
                 });
             }
+        } else if (tab === 'preferences') {
+            settingsContent.innerHTML = this.renderPreferencesTab();
+            this.attachPreferencesHandler();
         }
     },
 
@@ -1092,6 +1097,97 @@ const settingsPage = {
             }
         } catch (error) {
             components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    renderPreferencesTab() {
+        // Get current preferences from localStorage
+        const currentTheme = localStorage.getItem('theme') || 'dark';
+        const showStats = localStorage.getItem('showStats') !== 'false'; // default true
+
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Display Preferences</h3>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Theme</label>
+                    <div class="flex gap-2" style="flex-wrap: wrap;">
+                        <label class="checkbox-wrapper">
+                            <input type="radio" name="theme" value="dark" ${currentTheme === 'dark' ? 'checked' : ''}>
+                            <span>Dark Mode</span>
+                        </label>
+                        <label class="checkbox-wrapper">
+                            <input type="radio" name="theme" value="light" ${currentTheme === 'light' ? 'checked' : ''}>
+                            <span>Light Mode</span>
+                        </label>
+                    </div>
+                    <p class="text-xs text-muted mt-1">Choose your preferred color theme</p>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-wrapper">
+                        <input type="checkbox" id="showStatsToggle" ${showStats ? 'checked' : ''}>
+                        <span>Show Statistics Cards on Dashboard</span>
+                    </label>
+                    <p class="text-xs text-muted mt-1">Toggle visibility of stats boxes (Total Runs, Jobs Found, etc.)</p>
+                </div>
+
+                <div class="flex-end gap-2 mt-4">
+                    <button type="button" class="btn btn-primary" onclick="settingsPage.savePreferences()">
+                        Save Preferences
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">About</h3>
+                </div>
+                <p class="text-sm text-muted">Job Search Pipeline - Vanilla Frontend</p>
+                <p class="text-xs text-muted mt-2">Refactored to match Next.js UI with horizontal navigation, light mode support, and progress tracking.</p>
+            </div>
+        `;
+    },
+
+    attachPreferencesHandler() {
+        // Listen for theme changes
+        const themeRadios = document.querySelectorAll('input[name="theme"]');
+        themeRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                this.applyTheme(e.target.value);
+            });
+        });
+    },
+
+    applyTheme(theme) {
+        if (theme === 'light') {
+            document.body.classList.add('light-mode');
+        } else {
+            document.body.classList.remove('light-mode');
+        }
+        localStorage.setItem('theme', theme);
+    },
+
+    savePreferences() {
+        const theme = document.querySelector('input[name="theme"]:checked')?.value || 'dark';
+        const showStats = document.getElementById('showStatsToggle')?.checked || false;
+
+        localStorage.setItem('theme', theme);
+        localStorage.setItem('showStats', showStats ? 'true' : 'false');
+
+        this.applyTheme(theme);
+
+        components.notify('Preferences saved!', 'success');
+
+        // Reload dashboard if we're changing stats visibility
+        if (window.location.hash === '#/' || window.location.hash === '') {
+            setTimeout(() => {
+                if (window.dashboardPage) {
+                    window.dashboardPage.render();
+                }
+            }, 500);
         }
     }
 };

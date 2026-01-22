@@ -8,19 +8,25 @@
 </head>
 <body>
     <div id="app">
-        <nav id="sidebar">
-            <div class="logo">
-                <h1>JobSearch</h1>
+        <!-- Horizontal Navigation Bar -->
+        <nav id="navbar" class="navbar">
+            <div class="navbar-container">
+                <div class="navbar-content">
+                    <div class="navbar-brand">
+                        <h1>Job Search Pipeline</h1>
+                    </div>
+                    <div class="navbar-links">
+                        <a href="#/" data-page="dashboard" class="nav-link active">Dashboard</a>
+                        <a href="#/runs" data-page="runs" class="nav-link">Runs</a>
+                        <a href="#/jobs" data-page="jobs" class="nav-link">Jobs</a>
+                        <a href="#/settings" data-page="settings" class="nav-link">Settings</a>
+                    </div>
+                </div>
             </div>
-            <ul class="nav-links">
-                <li><a href="#/" data-page="dashboard" class="nav-link active">Dashboard</a></li>
-                <li><a href="#/jobs" data-page="jobs" class="nav-link">Jobs</a></li>
-                <li><a href="#/runs" data-page="runs" class="nav-link">Runs</a></li>
-                <li><a href="#/settings" data-page="settings" class="nav-link">Settings</a></li>
-            </ul>
         </nav>
 
-        <main id="content">
+        <!-- Main Content Area -->
+        <main id="content" class="main-content">
             <!-- Dynamic content loaded here -->
         </main>
     </div>

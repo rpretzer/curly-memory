@@ -149,7 +149,7 @@ const components = {
     },
 
     /**
-     * Render search form
+     * Render search form (single column layout like Next.js)
      */
     searchForm(profile = {}) {
         const salaryMin = profile.salary_min || '';
@@ -158,72 +158,42 @@ const components = {
         return `
             <form id="searchForm" class="card">
                 <div class="card-header">
-                    <h3 class="card-title">New Job Search</h3>
+                    <h3 class="card-title">Start New Search</h3>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Job Titles</label>
+                    <label class="form-label">Job Titles <span style="color: var(--error);">*</span></label>
                     <div id="search-titles-chip-input"></div>
                 </div>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">Locations</label>
-                        <div id="search-locations-chip-input"></div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Min Salary</label>
-                        <div class="input-with-prefix">
-                            <span class="input-prefix">$</span>
-                            <input type="text" class="form-input" name="salary_min" id="salary_min"
-                                value="${salaryMin ? salaryMin.toLocaleString('en-US') : ''}"
-                                placeholder="e.g., 150,000">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">Keywords</label>
-                        <div id="search-keywords-chip-input"></div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Max Results</label>
-                        <input type="number" class="form-input" name="max_results"
-                            value="50" min="1" max="500">
-                    </div>
-                </div>
-
                 <div class="form-group">
+                    <label class="form-label">Locations <span style="color: var(--error);">*</span></label>
+                    <div id="search-locations-chip-input"></div>
+                </div>
+
+                <div class="flex gap-2" style="flex-wrap: wrap;">
                     <label class="checkbox-wrapper">
                         <input type="checkbox" name="remote" ${isRemote ? 'checked' : ''}>
-                        <span>Remote positions only</span>
+                        <span>Remote only</span>
+                    </label>
+                    <label class="checkbox-wrapper">
+                        <input type="checkbox" name="generate_content" checked>
+                        <span>Generate content</span>
                     </label>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Job Sources</label>
-                    <div class="flex gap-2" style="flex-wrap: wrap;">
-                        <label class="checkbox-wrapper">
-                            <input type="checkbox" name="sources" value="greenhouse" checked>
-                            <span>Greenhouse</span>
-                        </label>
-                        <label class="checkbox-wrapper">
-                            <input type="checkbox" name="sources" value="workday" checked>
-                            <span>Workday</span>
-                        </label>
-                        <label class="checkbox-wrapper">
-                            <input type="checkbox" name="sources" value="linkedin" checked>
-                            <span>LinkedIn</span>
-                        </label>
-                        <label class="checkbox-wrapper">
-                            <input type="checkbox" name="sources" value="indeed">
-                            <span>Indeed</span>
-                        </label>
-                    </div>
+                    <label class="form-label">Max Results</label>
+                    <input type="number" class="form-input" name="max_results"
+                        value="50" min="1" max="200">
                 </div>
 
-                <button type="submit" class="btn btn-primary">Start Search</button>
+                <!-- Progress indicator will be inserted here -->
+                <div id="search-progress-box"></div>
+
+                <button type="submit" class="btn btn-primary" id="searchSubmitBtn" style="width: 100%;">
+                    Start Search
+                </button>
             </form>
         `;
     },
@@ -271,6 +241,73 @@ const components = {
      */
     loading() {
         return '<div class="loading"><div class="spinner"></div></div>';
+    },
+
+    /**
+     * Render progress box for search status (like Next.js)
+     */
+    progressBox(runStatus) {
+        if (!runStatus) return '';
+
+        const isComplete = runStatus.status === 'completed' || runStatus.status === 'failed';
+        const isSpinning = !isComplete;
+
+        // Calculate progress percentage
+        let progressPercent = 0;
+        if (runStatus.jobs_found > 0) progressPercent = 33;
+        if (runStatus.jobs_scored > 0) progressPercent = 66;
+        if (runStatus.status === 'completed') progressPercent = 100;
+
+        // Status messages
+        const statusMessages = {
+            'pending': 'Initializing...',
+            'searching': 'Searching job boards...',
+            'scoring': 'Scoring and filtering jobs...',
+            'content_generation': 'Generating content...',
+            'completed': 'Search complete!',
+            'failed': 'Search failed. Check logs for details.'
+        };
+
+        const statusMessage = statusMessages[runStatus.status] || 'Processing...';
+
+        return `
+            <div class="progress-box">
+                <div class="progress-box-header">
+                    <div class="progress-box-title">
+                        ${isSpinning ? '<div class="spinner-sm"></div>' : ''}
+                        <span>Run #${runStatus.run_id} - ${runStatus.status.charAt(0).toUpperCase() + runStatus.status.slice(1)}</span>
+                    </div>
+                    ${runStatus.status === 'completed' ? '<span style="color: var(--success); font-size: 0.75rem; font-weight: 600;">✓ Complete</span>' : ''}
+                    ${runStatus.status === 'failed' ? '<span style="color: var(--error); font-size: 0.75rem; font-weight: 600;">✗ Failed</span>' : ''}
+                </div>
+
+                <div class="progress-box-stats">
+                    <div class="progress-box-stat">
+                        <span class="progress-box-stat-label">Jobs Found:</span>
+                        <span class="progress-box-stat-value">${runStatus.jobs_found || 0}</span>
+                    </div>
+                    ${runStatus.jobs_scored > 0 ? `
+                        <div class="progress-box-stat">
+                            <span class="progress-box-stat-label">Jobs Scored:</span>
+                            <span class="progress-box-stat-value">${runStatus.jobs_scored}</span>
+                        </div>
+                    ` : ''}
+                    ${runStatus.jobs_above_threshold > 0 ? `
+                        <div class="progress-box-stat">
+                            <span class="progress-box-stat-label">Above Threshold:</span>
+                            <span class="progress-box-stat-value" style="color: var(--success);">${runStatus.jobs_above_threshold}</span>
+                        </div>
+                    ` : ''}
+                </div>
+
+                ${!isComplete ? `
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${progressPercent}%;"></div>
+                    </div>
+                    <div class="progress-box-message">${statusMessage}</div>
+                ` : ''}
+            </div>
+        `;
     },
 
     /**

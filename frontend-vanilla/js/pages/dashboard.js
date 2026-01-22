@@ -22,19 +22,24 @@ const dashboardPage = {
         // Pending = scored but not approved and not applied
         const pendingCount = Math.max(0, totalJobsScored - totalJobsApproved - totalJobsApplied);
 
+        // Check if stats should be shown
+        const showStats = localStorage.getItem('showStats') !== 'false'; // default true
+
         content.innerHTML = `
             <div class="page-header">
                 <h2>Dashboard</h2>
                 <p>Job search pipeline overview</p>
             </div>
 
-            <div class="stats-grid">
-                ${components.statCard(runs.length, 'Total Runs', null, "router.navigate('/runs')")}
-                ${components.statCard(totalJobsFound, 'Jobs Found', null, "dashboardPage.goToJobs('all')")}
-                ${components.statCard(pendingCount, 'Pending Review', '#f59e0b', "dashboardPage.goToJobs('pending')")}
-                ${components.statCard(totalJobsApproved, 'Approved', '#22c55e', "dashboardPage.goToJobs('approved')")}
-                ${components.statCard(totalJobsApplied, 'Applied', '#3b82f6', "dashboardPage.goToJobs('applied')")}
-            </div>
+            ${showStats ? `
+                <div class="stats-grid">
+                    ${components.statCard(runs.length, 'Total Runs', null, "router.navigate('/runs')")}
+                    ${components.statCard(totalJobsFound, 'Jobs Found', null, "dashboardPage.goToJobs('all')")}
+                    ${components.statCard(pendingCount, 'Pending Review', '#f59e0b', "dashboardPage.goToJobs('pending')")}
+                    ${components.statCard(totalJobsApproved, 'Approved', '#10b981', "dashboardPage.goToJobs('approved')")}
+                    ${components.statCard(totalJobsApplied, 'Applied', '#3b82f6', "dashboardPage.goToJobs('applied')")}
+                </div>
+            ` : ''}
 
             ${components.searchForm(profile)}
 
@@ -96,84 +101,114 @@ const dashboardPage = {
         // Setup chip inputs - empty by default, will be populated from profile if available
         setupChipInput('search-titles-chip-input', [], 'blue', SUGGESTIONS.jobTitles);
         setupChipInput('search-locations-chip-input', [], 'green', SUGGESTIONS.locations);
-        setupChipInput('search-keywords-chip-input', [], 'purple', SUGGESTIONS.keywords);
-
-        // Setup salary input formatting
-        const salaryInput = document.getElementById('salary_min');
-        if (salaryInput) {
-            salaryInput.addEventListener('input', (e) => {
-                // Remove non-digits
-                let value = e.target.value.replace(/[^\d]/g, '');
-                // Format with commas
-                if (value) {
-                    value = parseInt(value).toLocaleString('en-US');
-                }
-                e.target.value = value;
-            });
-        }
 
         // Update with profile data when available
         api.getProfile().then(profile => {
             if (profile.target_titles && profile.target_titles.length > 0) {
                 setupChipInput('search-titles-chip-input', profile.target_titles, 'blue', SUGGESTIONS.jobTitles);
             }
-            if (profile.must_have_keywords && profile.must_have_keywords.length > 0) {
-                setupChipInput('search-keywords-chip-input', profile.must_have_keywords, 'purple', SUGGESTIONS.keywords);
-            }
         }).catch(error => {
             console.warn('Could not load profile for search form:', error);
-            // Already setup with defaults above
         });
+
+        // Polling state
+        let pollingInterval = null;
+
+        const stopPolling = () => {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        };
+
+        const pollRunStatus = async (runId) => {
+            try {
+                const runStatus = await api.getRun(runId);
+
+                // Update progress box
+                const progressBox = document.getElementById('search-progress-box');
+                if (progressBox) {
+                    progressBox.innerHTML = components.progressBox(runStatus);
+                }
+
+                // Check if complete
+                if (runStatus.status === 'completed' || runStatus.status === 'failed') {
+                    stopPolling();
+
+                    const submitBtn = document.getElementById('searchSubmitBtn');
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Start Search';
+                    }
+
+                    // Wait a moment then redirect
+                    setTimeout(() => {
+                        router.navigate(`/runs/${runId}`);
+                    }, 1500);
+                }
+            } catch (error) {
+                console.error('Error polling run status:', error);
+                stopPolling();
+            }
+        };
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const formData = new FormData(form);
-            const submitBtn = form.querySelector('button[type="submit"]');
-
-            // Get selected sources
-            const sources = [];
-            form.querySelectorAll('input[name="sources"]:checked').forEach(cb => {
-                sources.push(cb.value);
-            });
+            const submitBtn = document.getElementById('searchSubmitBtn');
 
             // Get chip input values
             const titles = window.chipInputs['search-titles']?.getItems() || [];
             const locations = window.chipInputs['search-locations']?.getItems() || [];
-            const keywords = window.chipInputs['search-keywords']?.getItems() || [];
 
-            // Construct the payload matching RunRequest model
+            // Validation
+            if (titles.length === 0) {
+                components.notify('At least one job title is required', 'error');
+                return;
+            }
+            if (locations.length === 0) {
+                components.notify('At least one location is required', 'error');
+                return;
+            }
+
+            // Construct the payload
             const searchConfig = {
-                titles: titles.length > 0 ? titles : null,
-                locations: locations.length > 0 ? locations : null,
-                keywords: keywords.length > 0 ? keywords : null,
+                titles: titles,
+                locations: locations,
                 remote: formData.get('remote') === 'on',
-                sources: sources.length > 0 ? sources : null,
                 max_results: parseInt(formData.get('max_results')) || 50
             };
 
-            // Parse salary_min (remove commas)
-            const salaryMinStr = formData.get('salary_min');
-            const salaryMin = salaryMinStr ? parseInt(salaryMinStr.replace(/[^\d]/g, '')) : null;
-
             const runConfig = {
                 search: searchConfig,
-                salary_min: salaryMin,
-                // Default values for other fields
-                remote_preference: 'any',
-                generate_content: true,
+                generate_content: formData.get('generate_content') === 'on',
                 auto_apply: false
             };
 
             try {
                 submitBtn.disabled = true;
-                submitBtn.textContent = 'Starting search...';
+                submitBtn.textContent = 'Starting Search...';
 
                 const run = await api.createRun(runConfig);
-                components.notify('Search started successfully!', 'success');
 
-                // Navigate to run details
-                router.navigate(`/runs/${run.run_id}`);
+                // Show initial progress
+                const progressBox = document.getElementById('search-progress-box');
+                if (progressBox) {
+                    progressBox.innerHTML = components.progressBox(run);
+                }
+
+                submitBtn.textContent = 'Search in Progress...';
+
+                // Start polling every 2 seconds
+                stopPolling(); // Clear any existing interval
+                pollingInterval = setInterval(() => {
+                    pollRunStatus(run.run_id);
+                }, 2000);
+
+                // Poll immediately
+                pollRunStatus(run.run_id);
+
             } catch (error) {
                 components.notify(`Error: ${error.message}`, 'error');
                 submitBtn.disabled = false;
