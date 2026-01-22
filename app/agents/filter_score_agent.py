@@ -120,16 +120,22 @@ class FilterAndScoreAgent:
             reasoning_parts.append("No salary information available")
         
         # 5. Keyword overlap score (0-10)
-        keyword_score = self._score_keyword_overlap(
-            job_listing.description or "",
-            job_listing.keywords or [],
-            must_have_keywords or [],
-            nice_to_have_keywords or [],
-        )
-        breakdown["keyword_overlap"] = keyword_score
-        if keyword_score > 6:
-            reasoning_parts.append(f"Good keyword match ({keyword_score:.1f}/10)")
-        
+        # Only include keyword score if user has defined keywords
+        has_keywords = bool(must_have_keywords or nice_to_have_keywords)
+        keyword_score = 0.0
+        if has_keywords:
+            keyword_score = self._score_keyword_overlap(
+                job_listing.description or "",
+                job_listing.keywords or [],
+                must_have_keywords or [],
+                nice_to_have_keywords or [],
+            )
+            breakdown["keyword_overlap"] = keyword_score
+            if keyword_score > 6:
+                reasoning_parts.append(f"Good keyword match ({keyword_score:.1f}/10)")
+        else:
+            breakdown["keyword_overlap"] = None  # Indicate it wasn't used
+
         # 6. Company match score (0-10)
         company_score = 0.0
         if target_companies:
@@ -140,24 +146,38 @@ class FilterAndScoreAgent:
         breakdown["company_match"] = company_score
         if company_score > 7:
             reasoning_parts.append(f"Target company match ({company_score:.1f}/10)")
-        
+
         # 7. Posting recency score (0-10)
         recency_score = self._score_posting_recency(job_listing.posting_date)
         breakdown["posting_recency"] = recency_score
-        
+
         # Calculate weighted total score
+        # Only include keyword weight if user has defined keywords
         total_score = (
             title_score * self.weights["title_match"] +
             vertical_score * self.weights["vertical_match"] +
             remote_score * self.weights["remote_preference"] +
             comp_score * self.weights["comp_match"] +
-            keyword_score * self.weights["keyword_overlap"] +
             company_score * self.weights["company_match"] +
             recency_score * self.weights["posting_recency"]
         )
-        
+
+        # Calculate total weight (excluding keyword weight if no keywords defined)
+        total_weight = (
+            self.weights["title_match"] +
+            self.weights["vertical_match"] +
+            self.weights["remote_preference"] +
+            self.weights["comp_match"] +
+            self.weights["company_match"] +
+            self.weights["posting_recency"]
+        )
+
+        # Add keyword contribution only if keywords are defined
+        if has_keywords:
+            total_score += keyword_score * self.weights["keyword_overlap"]
+            total_weight += self.weights["keyword_overlap"]
+
         # Normalize to 0-10 scale
-        total_weight = sum(self.weights.values())
         normalized_score = total_score / total_weight if total_weight > 0 else 0.0
         
         breakdown["total_score"] = normalized_score
