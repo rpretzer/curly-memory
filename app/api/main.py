@@ -632,6 +632,12 @@ async def bulk_approve_jobs(
             queued_count = service.queue_manager.add_jobs(jobs)
             if queued_count > 0:
                 logger.info(f"Auto-queued {queued_count} jobs for application")
+
+                # Start background processing if not already running
+                status = service.get_status()
+                if not status["is_processing"] and status["queue_size"] > 0:
+                    service.start_background_processing()
+                    logger.info("Started background processing for queued jobs")
     except Exception as e:
         logger.warning(f"Failed to auto-queue jobs: {e}")
 
@@ -720,6 +726,13 @@ async def approve_job(
             queued = service.queue_manager.add_job(job)
             if queued:
                 logger.info(f"Auto-queued job {job_id} for application")
+
+                # Start background processing if not already running
+                status = service.get_status()
+                if not status["is_processing"] and status["queue_size"] > 0:
+                    service.start_background_processing()
+                    logger.info("Started background processing for queued job")
+
                 return {"status": "approved", "job_id": job_id, "queued": True}
     except Exception as e:
         logger.warning(f"Failed to auto-queue job {job_id}: {e}")
