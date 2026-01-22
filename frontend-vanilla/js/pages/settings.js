@@ -27,10 +27,10 @@ const settingsPage = {
                 </div>
 
                 <div class="tabs">
-                    <button class="tab active" onclick="settingsPage.showTab('profile')">Profile</button>
+                    <button class="tab active" onclick="settingsPage.showTab('profile')">Profile & Resume</button>
+                    <button class="tab" onclick="settingsPage.showTab('search')">Search Parameters</button>
                     <button class="tab" onclick="settingsPage.showTab('autoapply')">Auto-Apply</button>
                     <button class="tab" onclick="settingsPage.showTab('scheduler')">Scheduler</button>
-                    <button class="tab" onclick="settingsPage.showTab('resume')">Resume</button>
                 </div>
 
                 <div id="settingsContent">
@@ -47,9 +47,9 @@ const settingsPage = {
         document.querySelectorAll('.tabs .tab').forEach((t, i) => {
             t.classList.toggle('active',
                 (tab === 'profile' && i === 0) ||
-                (tab === 'autoapply' && i === 1) ||
-                (tab === 'scheduler' && i === 2) ||
-                (tab === 'resume' && i === 3)
+                (tab === 'search' && i === 1) ||
+                (tab === 'autoapply' && i === 2) ||
+                (tab === 'scheduler' && i === 3)
             );
         });
 
@@ -61,11 +61,23 @@ const settingsPage = {
                 // Only attach handler if we're in view mode (edit mode handled by toggleProfileMode)
                 // View mode doesn't need the handler since there's no form
             });
+        } else if (tab === 'search') {
+            api.getConfig().then(config => {
+                settingsContent.innerHTML = this.renderSearchParametersTab(config);
+                this.attachSearchHandler(config);
+            }).catch(error => {
+                console.error('Error loading search parameters:', error);
+                settingsContent.innerHTML = '<div class="card"><p>Error loading configuration</p></div>';
+            });
         } else if (tab === 'autoapply') {
-            api.getAutoApplyStatus().then(status => {
-                settingsContent.innerHTML = this.renderAutoApplyTab(status);
+            Promise.all([
+                api.getAutoApplyStatus(),
+                api.getConfig()
+            ]).then(([status, config]) => {
+                settingsContent.innerHTML = this.renderAutoApplyTab(status, config);
+                this.attachAutoApplyHandler(config);
             }).catch(() => {
-                settingsContent.innerHTML = this.renderAutoApplyTab({ enabled: false, queue_size: 0 });
+                settingsContent.innerHTML = this.renderAutoApplyTab({ enabled: false, queue_size: 0 }, {});
             });
         } else if (tab === 'scheduler') {
             // Use stored status or fetch fresh
@@ -77,7 +89,7 @@ const settingsPage = {
                     this.schedulerStatus = status;
                     // Only re-render if we are still on the scheduler tab
                     // Check if scheduler tab is active (simple check)
-                    if (document.querySelector('.tabs .tab:nth-child(3)').classList.contains('active')) {
+                    if (document.querySelector('.tabs .tab:nth-child(4)').classList.contains('active')) {
                          settingsContent.innerHTML = this.renderSchedulerTab(status);
                          this.attachSchedulerHandler();
                     }
@@ -91,15 +103,6 @@ const settingsPage = {
                     settingsContent.innerHTML = this.renderSchedulerTab({ running: false });
                 });
             }
-        } else if (tab === 'resume') {
-            api.getProfile().then(profile => {
-                settingsContent.innerHTML = this.renderResumeTab(profile);
-                this.attachResumeHandler();
-            }).catch(error => {
-                console.error('Error loading resume tab:', error);
-                settingsContent.innerHTML = this.renderResumeTab({});
-                this.attachResumeHandler();
-            });
         }
     },
 
@@ -147,11 +150,6 @@ const settingsPage = {
                     ${field('LinkedIn Profile', profile.linkedin_url ? `<a href="${components.escapeHtml(profile.linkedin_url)}" target="_blank" class="text-primary hover:underline">View Profile</a>` : null)}
                 </div>
 
-                <div class="grid grid-cols-2 gap-4 mt-2 p-3 rounded" style="background-color: var(--bg-tertiary);">
-                    ${field('LinkedIn Login Email', components.escapeHtml(profile.linkedin_user))}
-                    ${field('LinkedIn Password', profile.has_linkedin_password ? '********' : null)}
-                </div>
-
                 <div class="mt-2">
                     ${field('Target Titles', (profile.target_titles || []).map(t => `<span class="chip chip-blue">${components.escapeHtml(t)}</span>`).join(' '))}
                 </div>
@@ -174,6 +172,17 @@ const settingsPage = {
 
                 <div class="mt-2">
                     ${field('Experience Summary', components.escapeHtml(profile.experience_summary))}
+                </div>
+
+                <div class="mt-4">
+                    <h4 class="text-sm font-semibold mb-2">Resume</h4>
+                    ${profile.resume_text ?
+                        `<div class="p-2 rounded" style="background: var(--bg-tertiary);">
+                            <p class="text-sm text-muted">Resume loaded (${profile.resume_text.length} characters)</p>
+                            ${profile.resume_file_path ? `<p class="text-xs text-muted mt-1">File: ${components.escapeHtml(profile.resume_file_path.split('/').pop())}</p>` : ''}
+                        </div>` :
+                        `<p class="text-muted italic">No resume uploaded</p>`
+                    }
                 </div>
             </div>
         `;
@@ -221,23 +230,6 @@ const settingsPage = {
                     </div>
                 </div>
 
-                <div class="card p-3 mb-3" style="background-color: var(--bg-tertiary);">
-                    <h4 class="text-sm font-semibold mb-2">LinkedIn Credentials</h4>
-                    <p class="text-xs text-muted mb-3">Optional: Provide credentials to enable authenticated scraping (avoids redacted results). Stored encrypted.</p>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Login Email</label>
-                            <input type="email" class="form-input" name="linkedin_user"
-                                value="${components.escapeHtml(profile.linkedin_user || '')}">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Login Password</label>
-                            <input type="password" class="form-input" name="linkedin_password"
-                                placeholder="${profile.has_linkedin_password ? '******** (Leave empty to keep current)' : 'Enter password'}">
-                        </div>
-                    </div>
-                </div>
-
                 <div class="form-group">
                     <label class="form-label">Current Title</label>
                     <input type="text" class="form-input" name="current_title"
@@ -275,6 +267,24 @@ const settingsPage = {
                         placeholder="Brief summary of your experience...">${components.escapeHtml(profile.experience_summary || '')}</textarea>
                 </div>
 
+                <div class="card p-3" style="background-color: var(--bg-tertiary);">
+                    <h4 class="text-sm font-semibold mb-2">Resume Upload</h4>
+                    <div class="form-group">
+                        <label class="form-label">Upload Resume (PDF, DOC, DOCX)</label>
+                        <input type="file" id="resumeFileEdit" accept=".pdf,.doc,.docx"
+                            class="form-input" style="padding: 0.5rem;">
+                    </div>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="settingsPage.uploadResumeInline()">
+                        Upload Resume
+                    </button>
+                    ${profile && profile.resume_text ? `
+                        <div class="mt-2">
+                            <p class="text-sm text-muted">Current resume: ${profile.resume_text.length} characters loaded</p>
+                            ${profile.resume_file_path ? `<p class="text-xs text-muted">File: ${components.escapeHtml(profile.resume_file_path.split('/').pop())}</p>` : ''}
+                        </div>
+                    ` : ''}
+                </div>
+
                 <div class="flex-end gap-2 mt-4">
                     <button type="button" class="btn btn-secondary" onclick="settingsPage.toggleProfileMode('view')">Cancel</button>
                     <button type="submit" class="btn btn-primary" id="saveProfileBtn">Save Changes</button>
@@ -293,7 +303,110 @@ const settingsPage = {
         });
     },
 
-    renderAutoApplyTab(status) {
+    renderSearchParametersTab(config) {
+        const search = config.search || {};
+        const thresholds = config.thresholds || {};
+        const linkedinConfig = config.job_sources?.linkedin || {};
+
+        return `
+            <form id="searchForm" class="space-y-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">LinkedIn Credentials</h3>
+                    </div>
+                    <p class="text-sm text-muted mb-3">Provide your LinkedIn credentials for authenticated scraping. Credentials are stored in config.yaml.</p>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">LinkedIn Email</label>
+                            <input type="email" class="form-input" name="linkedin_email"
+                                value="${components.escapeHtml(linkedinConfig.linkedin_email || '')}"
+                                placeholder="your.email@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">LinkedIn Password</label>
+                            <input type="password" class="form-input" name="linkedin_password"
+                                value="${components.escapeHtml(linkedinConfig.linkedin_password || '')}"
+                                placeholder="Enter password">
+                        </div>
+                    </div>
+                    <p class="text-xs text-warning mt-2">⚠️ These credentials will be saved to config.yaml. Keep your config file secure.</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Default Search Parameters</h3>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Default Job Titles</label>
+                        <div id="default-titles-chip-input"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Default Locations</label>
+                        <div id="default-locations-chip-input"></div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Remote Preference</label>
+                            <select class="form-select" name="default_remote_preference">
+                                <option value="any" ${search.default_remote_preference === 'any' ? 'selected' : ''}>Any</option>
+                                <option value="remote" ${search.default_remote_preference === 'remote' ? 'selected' : ''}>Remote</option>
+                                <option value="hybrid" ${search.default_remote_preference === 'hybrid' ? 'selected' : ''}>Hybrid</option>
+                                <option value="on-site" ${search.default_remote_preference === 'on-site' ? 'selected' : ''}>On-Site</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Minimum Salary</label>
+                            <input type="number" class="form-input" name="default_salary_min"
+                                value="${search.default_salary_min || ''}"
+                                placeholder="e.g., 115000">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Scoring Thresholds</h3>
+                    </div>
+                    <p class="text-sm text-info mb-3">ℹ️ Minimum Relevance Score: Jobs below this score are filtered out completely. Lower this value to see more jobs (useful for debugging).</p>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Minimum Relevance Score (0-10)</label>
+                            <input type="number" class="form-input" name="min_relevance_score"
+                                min="0" max="10" step="0.1"
+                                value="${thresholds.min_relevance_score || 4.5}">
+                            <p class="text-xs text-muted mt-1">Jobs below this score are filtered out</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">High Relevance Score (0-10)</label>
+                            <input type="number" class="form-input" name="high_relevance_score"
+                                min="0" max="10" step="0.1"
+                                value="${thresholds.high_relevance_score || 7.5}">
+                            <p class="text-xs text-muted mt-1">Used for categorization</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Auto-Approval Threshold (0-10)</label>
+                            <input type="number" class="form-input" name="auto_approval_threshold"
+                                min="0" max="10" step="0.1"
+                                value="${thresholds.auto_approval_threshold || 8.0}">
+                            <p class="text-xs text-muted mt-1">Jobs at/above this score are auto-approved</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-end gap-2">
+                    <button type="submit" class="btn btn-primary" id="saveSearchBtn">Save Configuration</button>
+                </div>
+            </form>
+        `;
+    },
+
+    renderAutoApplyTab(status, config = {}) {
+        const contentPrompts = config.content_prompts || {};
         return `
             <div class="card">
                 <div class="card-header">
@@ -405,6 +518,39 @@ const settingsPage = {
                     </tbody>
                 </table>
             </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Content Generation Prompts</h3>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Resume Summary Prompt</label>
+                    <textarea class="form-textarea" id="resumeSummaryPrompt" rows="4"
+                        style="font-family: monospace; font-size: 0.875rem;"
+                        placeholder="Generate 3-5 tailored bullet points for a resume...">${components.escapeHtml(contentPrompts.resume_summary || '')}</textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Cover Letter Template</label>
+                    <textarea class="form-textarea" id="coverLetterTemplate" rows="6"
+                        style="font-family: monospace; font-size: 0.875rem;"
+                        placeholder="Write a professional cover letter...">${components.escapeHtml(contentPrompts.cover_letter_template || '')}</textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Application Answers Prompt</label>
+                    <textarea class="form-textarea" id="applicationAnswersPrompt" rows="4"
+                        style="font-family: monospace; font-size: 0.875rem;"
+                        placeholder="Generate concise answers to application questions...">${components.escapeHtml(contentPrompts.application_answers || '')}</textarea>
+                </div>
+
+                <div class="flex-end">
+                    <button type="button" class="btn btn-primary" onclick="settingsPage.saveContentPrompts()">
+                        Save Prompts
+                    </button>
+                </div>
+            </div>
         `;
     },
 
@@ -515,44 +661,6 @@ const settingsPage = {
         `;
     },
 
-    renderResumeTab(profile = {}) {
-        return `
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Resume Upload</h3>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Upload Resume (PDF, DOC, DOCX)</label>
-                    <input type="file" id="resumeFile" accept=".pdf,.doc,.docx"
-                        class="form-input" style="padding: 0.5rem;">
-                </div>
-
-                <button class="btn btn-primary" onclick="settingsPage.uploadResume()">
-                    Upload Resume
-                </button>
-
-                ${profile && profile.resume_file_path ? `
-                    <div class="mt-2">
-                        <p class="text-muted">Current resume: ${components.escapeHtml(profile.resume_file_path.split('/').pop())}</p>
-                    </div>
-                ` : ''}
-
-                ${profile && profile.resume_text ? `
-                    <div class="card mt-2" style="background: var(--bg-tertiary);">
-                        <div class="card-header">
-                            <h4 class="card-title">Extracted Text</h4>
-                        </div>
-                        <pre style="white-space: pre-wrap; font-size: 0.875rem; color: var(--text-secondary); max-height: 300px; overflow-y: auto;">${components.escapeHtml(profile.resume_text)}</pre>
-                    </div>
-                ` : `
-                    <div class="card mt-2 p-3" style="background: var(--bg-tertiary);">
-                        <p class="text-muted text-center">No resume uploaded yet. Upload a resume to enable auto-apply features.</p>
-                    </div>
-                `}
-            </div>
-        `;
-    },
 
     attachProfileHandler(profile = {}) {
         const form = document.getElementById('profileForm');
@@ -591,8 +699,6 @@ const settingsPage = {
                 phone: formData.get('phone'),
                 location: formData.get('location'),
                 linkedin_url: formData.get('linkedin_url'),
-                linkedin_user: formData.get('linkedin_user'),
-                linkedin_password: formData.get('linkedin_password') || null,
                 portfolio_url: formData.get('portfolio_url'),
                 current_title: formData.get('current_title'),
                 target_titles: window.chipInputs['target-titles']?.getItems() || [],
@@ -621,6 +727,79 @@ const settingsPage = {
                 saveBtn.textContent = originalBtnText;
             }
         });
+    },
+
+    attachSearchHandler(config = {}) {
+        const form = document.getElementById('searchForm');
+        if (!form) return;
+
+        // Setup chip inputs for default search parameters
+        const setupChipInput = (id, items, color, suggestions) => {
+            const container = document.getElementById(id);
+            if (!container) return;
+
+            const chipInput = components.chipInput(id.replace('-chip-input', ''), items, color, suggestions);
+            container.innerHTML = chipInput.html;
+            chipInput.setup();
+        };
+
+        const search = config.search || {};
+        setupChipInput('default-titles-chip-input', search.default_titles || [], 'blue', SUGGESTIONS.jobTitles);
+        setupChipInput('default-locations-chip-input', search.default_locations || [], 'green', SUGGESTIONS.locations);
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const saveBtn = document.getElementById('saveSearchBtn');
+            const originalBtnText = saveBtn.textContent;
+
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<div class="spinner spinner-sm"></div> Saving...';
+
+            const formData = new FormData(form);
+
+            // Build updated config
+            const updatedConfig = {
+                ...config,
+                search: {
+                    ...config.search,
+                    default_titles: window.chipInputs['default-titles']?.getItems() || [],
+                    default_locations: window.chipInputs['default-locations']?.getItems() || [],
+                    default_remote_preference: formData.get('default_remote_preference'),
+                    default_salary_min: parseInt(formData.get('default_salary_min')) || undefined
+                },
+                thresholds: {
+                    ...config.thresholds,
+                    min_relevance_score: parseFloat(formData.get('min_relevance_score')),
+                    high_relevance_score: parseFloat(formData.get('high_relevance_score')),
+                    auto_approval_threshold: parseFloat(formData.get('auto_approval_threshold'))
+                },
+                job_sources: {
+                    ...config.job_sources,
+                    linkedin: {
+                        ...config.job_sources?.linkedin,
+                        linkedin_email: formData.get('linkedin_email'),
+                        linkedin_password: formData.get('linkedin_password')
+                    }
+                }
+            };
+
+            try {
+                await api.updateConfig(updatedConfig);
+                components.notify('Configuration saved successfully!', 'success');
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalBtnText;
+            } catch (error) {
+                components.notify(`Error saving configuration: ${error.message}`, 'error');
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalBtnText;
+            }
+        });
+    },
+
+    attachAutoApplyHandler(config = {}) {
+        // Auto-apply tab doesn't need form handlers - buttons use onclick
+        // This function exists for future enhancements
     },
 
     attachSchedulerHandler() {
@@ -726,10 +905,6 @@ const settingsPage = {
         });
     },
 
-    attachResumeHandler() {
-        // Resume upload is handled via onclick
-    },
-
     async startScheduler() {
         try {
             await api.startScheduler();
@@ -764,9 +939,55 @@ const settingsPage = {
         try {
             await api.uploadResume(file);
             components.notify('Resume uploaded!', 'success');
-            this.showTab('resume');
+            this.showTab('profile');
         } catch (error) {
             components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async uploadResumeInline() {
+        const fileInput = document.getElementById('resumeFileEdit');
+        const file = fileInput?.files[0];
+
+        if (!file) {
+            components.notify('Please select a file', 'error');
+            return;
+        }
+
+        try {
+            await api.uploadResume(file);
+            components.notify('Resume uploaded!', 'success');
+            // Refresh the profile tab to show the updated resume
+            const profile = await api.getProfile();
+            const settingsContent = document.getElementById('settingsContent');
+            settingsContent.innerHTML = this.renderProfileTab(profile, 'edit');
+            this.attachProfileHandler(profile);
+        } catch (error) {
+            components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async saveContentPrompts() {
+        const resumeSummaryPrompt = document.getElementById('resumeSummaryPrompt')?.value;
+        const coverLetterTemplate = document.getElementById('coverLetterTemplate')?.value;
+        const applicationAnswersPrompt = document.getElementById('applicationAnswersPrompt')?.value;
+
+        try {
+            const config = await api.getConfig();
+            const updatedConfig = {
+                ...config,
+                content_prompts: {
+                    ...config.content_prompts,
+                    resume_summary: resumeSummaryPrompt,
+                    cover_letter_template: coverLetterTemplate,
+                    application_answers: applicationAnswersPrompt
+                }
+            };
+
+            await api.updateConfig(updatedConfig);
+            components.notify('Content prompts saved successfully!', 'success');
+        } catch (error) {
+            components.notify(`Error saving prompts: ${error.message}`, 'error');
         }
     },
 
