@@ -397,6 +397,17 @@ async def create_run(
                         )
                         logger.info(f"Pipeline run {run_id} completed: {result}")
                     except Exception as pipeline_err:
+                        # Import CancelledException for special handling
+                        from app.orchestrator import CancelledException
+
+                        # Check if this is a cancellation (not an error)
+                        if isinstance(pipeline_err, CancelledException):
+                            logger.info(f"Pipeline run {run_id} was cancelled")
+                            # Run status already set to CANCELLED by cancel endpoint
+                            # No need to update status here
+                            return
+
+                        # Handle other errors
                         logger.error(f"Error in pipeline run {run_id}: {pipeline_err}", exc_info=True)
                         # Update run status to failed (within same session)
                         try:
@@ -513,6 +524,46 @@ async def get_run(run_id: int, db: Session = Depends(get_db)):
         jobs_applied=run.jobs_applied,
         jobs_failed=run.jobs_failed,
     )
+
+
+@app.post("/runs/{run_id}/cancel")
+async def cancel_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_api_key),
+):
+    """Cancel a running pipeline run.
+
+    Sets the run status to CANCELLED, which will cause the background
+    task to stop processing.
+    """
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Only allow cancelling runs that are still in progress
+    if run.status in [RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel run with status: {run.status.value}"
+        )
+
+    try:
+        run.status = RunStatus.CANCELLED
+        run.completed_at = datetime.utcnow()
+        db.commit()
+
+        logger.info(f"Run {run_id} cancelled")
+
+        return {
+            "status": "cancelled",
+            "run_id": run_id,
+            "message": "Run has been cancelled"
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error cancelling run {run_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/runs/{run_id}/jobs")

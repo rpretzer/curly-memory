@@ -186,6 +186,23 @@ const dashboardPage = {
             }
         };
 
+        const resetFormState = () => {
+            stopPolling();
+            this.currentRunId = null;
+            const submitBtn = document.getElementById('searchSubmitBtn');
+            const cancelBtn = document.getElementById('searchCancelBtn');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Start Search';
+            }
+            if (cancelBtn) {
+                cancelBtn.style.display = 'none';
+            }
+        };
+
+        // Expose resetFormState for cancel button
+        this.resetFormState = resetFormState;
+
         const pollRunStatus = async (runId) => {
             try {
                 const runStatus = await api.getRun(runId);
@@ -196,20 +213,23 @@ const dashboardPage = {
                     progressBox.innerHTML = components.progressBox(runStatus);
                 }
 
-                // Check if complete
-                if (runStatus.status === 'completed' || runStatus.status === 'failed') {
-                    stopPolling();
+                // Check if complete or cancelled
+                if (runStatus.status === 'completed' || runStatus.status === 'failed' || runStatus.status === 'cancelled') {
+                    resetFormState();
 
-                    const submitBtn = document.getElementById('searchSubmitBtn');
-                    if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = 'Start Search';
+                    // Only redirect if completed successfully
+                    if (runStatus.status === 'completed') {
+                        setTimeout(() => {
+                            router.navigate(`/runs/${runId}`);
+                        }, 1500);
+                    } else if (runStatus.status === 'cancelled') {
+                        components.notify('Search cancelled', 'info');
+                        // Clear progress box
+                        const progressBox = document.getElementById('search-progress-box');
+                        if (progressBox) {
+                            progressBox.innerHTML = '';
+                        }
                     }
-
-                    // Wait a moment then redirect
-                    setTimeout(() => {
-                        router.navigate(`/runs/${runId}`);
-                    }, 1500);
                 }
             } catch (error) {
                 console.error('Error polling run status:', error);
@@ -258,6 +278,13 @@ const dashboardPage = {
                 submitBtn.textContent = 'Starting Search...';
 
                 const run = await api.createRun(runConfig);
+                this.currentRunId = run.run_id;
+
+                // Show cancel button
+                const cancelBtn = document.getElementById('searchCancelBtn');
+                if (cancelBtn) {
+                    cancelBtn.style.display = 'inline-flex';
+                }
 
                 // Show initial progress
                 const progressBox = document.getElementById('search-progress-box');
@@ -278,10 +305,29 @@ const dashboardPage = {
 
             } catch (error) {
                 components.notify(`Error: ${error.message}`, 'error');
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Start Search';
+                resetFormState();
             }
         });
+    },
+
+    async cancelSearch() {
+        if (!window.dashboardPage || !window.dashboardPage.currentRunId) {
+            components.notify('No search in progress', 'error');
+            return;
+        }
+
+        const runId = window.dashboardPage.currentRunId;
+
+        try {
+            await api.cancelRun(runId);
+            components.notify('Cancelling search...', 'info');
+        } catch (error) {
+            components.notify(`Error cancelling search: ${error.message}`, 'error');
+            // Reset form anyway
+            if (window.dashboardPage && window.dashboardPage.resetFormState) {
+                window.dashboardPage.resetFormState();
+            }
+        }
     },
 
     async clearRuns() {

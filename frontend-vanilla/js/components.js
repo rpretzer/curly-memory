@@ -204,9 +204,16 @@ const components = {
                 <!-- Progress indicator will be inserted here -->
                 <div id="search-progress-box"></div>
 
-                <button type="submit" class="btn btn-primary" id="searchSubmitBtn" style="width: 100%;">
-                    Start Search
-                </button>
+                <div class="flex gap-2" style="width: 100%;">
+                    <button type="submit" class="btn btn-primary" id="searchSubmitBtn" style="flex: 1;">
+                        Start Search
+                    </button>
+                    <button type="button" class="btn btn-danger" id="searchCancelBtn"
+                        onclick="dashboardPage.cancelSearch()"
+                        style="display: none;">
+                        Cancel Search
+                    </button>
+                </div>
             </form>
         `;
     },

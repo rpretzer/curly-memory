@@ -19,9 +19,14 @@ from app.db import get_db_context
 logger = logging.getLogger(__name__)
 
 
+class CancelledException(Exception):
+    """Exception raised when a run is cancelled."""
+    pass
+
+
 class PipelineOrchestrator:
     """Orchestrates the job search and application pipeline."""
-    
+
     def __init__(
         self,
         db: Session,
@@ -31,7 +36,7 @@ class PipelineOrchestrator:
     ):
         """
         Initialize the orchestrator.
-        
+
         Args:
             db: Database session
             search_config: Optional search configuration override
@@ -100,9 +105,25 @@ class PipelineOrchestrator:
             run_id=run.id,
             step="create_run",
         )
-        
+
         return run
-    
+
+    def check_cancelled(self, run_id: int):
+        """
+        Check if a run has been cancelled.
+
+        Args:
+            run_id: Run ID to check
+
+        Raises:
+            CancelledException: If the run has been cancelled
+        """
+        # Refresh run status from database
+        run = self.db.query(Run).filter(Run.id == run_id).first()
+        if run and run.status == RunStatus.CANCELLED:
+            logger.info(f"Run {run_id} has been cancelled")
+            raise CancelledException(f"Run {run_id} was cancelled")
+
     def run_search_only(
         self,
         run_id: int,
@@ -433,6 +454,9 @@ class PipelineOrchestrator:
             Dictionary with results summary
         """
         try:
+            # Check if cancelled before starting
+            self.check_cancelled(run_id)
+
             # Run search and score
             job_ids = self.run_search_and_score(
                 run_id=run_id,
@@ -453,6 +477,9 @@ class PipelineOrchestrator:
 
             # Generate content if requested
             if generate_content:
+                # Check if cancelled before content generation
+                self.check_cancelled(run_id)
+
                 run.status = RunStatus.CONTENT_GENERATING
                 self.db.commit()
 
@@ -460,6 +487,9 @@ class PipelineOrchestrator:
                 jobs = self.db.query(Job).filter(Job.id.in_(job_ids)).all()
 
                 for job in jobs:
+                    # Check cancellation before each job
+                    self.check_cancelled(run_id)
+
                     try:
                         self.content_agent.generate_all_content(job, run_id=run_id)
                     except Exception as e:
@@ -474,6 +504,9 @@ class PipelineOrchestrator:
 
             # Auto-apply only if enabled and jobs are approved
             if auto_apply:
+                # Check if cancelled before auto-apply
+                self.check_cancelled(run_id)
+
                 run.status = RunStatus.APPLYING
                 self.db.commit()
 
@@ -495,6 +528,9 @@ class PipelineOrchestrator:
                 failed_count = 0
 
                 for job in approved_jobs:
+                    # Check cancellation before each application
+                    self.check_cancelled(run_id)
+
                     try:
                         success = self.apply_agent.apply_to_job(
                             job,

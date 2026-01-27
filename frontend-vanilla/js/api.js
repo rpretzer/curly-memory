@@ -66,6 +66,10 @@ const api = {
         return this.request('/runs', { method: 'DELETE' });
     },
 
+    async cancelRun(id) {
+        return this.request(`/runs/${id}/cancel`, { method: 'POST' });
+    },
+
     // Jobs
     async getJobs(params = {}) {
         const query = new URLSearchParams(params).toString();
