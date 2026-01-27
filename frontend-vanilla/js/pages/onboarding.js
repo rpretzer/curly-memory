@@ -70,21 +70,10 @@ const onboardingPage = {
                     <input type="url" class="form-input" name="linkedin_url" value="${components.escapeHtml(p.linkedin_url || '')}" placeholder="https://linkedin.com/in/...">
                 </div>
 
-                <div class="card mt-3" style="background-color: var(--bg-tertiary);">
-                    <div class="card-header">
-                        <h4 class="text-sm font-semibold">LinkedIn Credentials (Optional)</h4>
-                        <p class="text-xs text-muted">Used for authenticated scraping to avoid redacted results. Stored encrypted.</p>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">LinkedIn Email</label>
-                            <input type="email" class="form-input" name="linkedin_user" value="${components.escapeHtml(p.linkedin_user || '')}">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">LinkedIn Password</label>
-                            <input type="password" class="form-input" name="linkedin_password" placeholder="Enter password to save/update">
-                        </div>
-                    </div>
+                <div class="card mt-3" style="background-color: rgba(59, 130, 246, 0.05); border: 1px solid rgba(59, 130, 246, 0.2);">
+                    <p class="text-sm" style="color: var(--accent);">
+                        <strong>💡 Note:</strong> LinkedIn scraping credentials can be configured later in Settings > Search Parameters if needed.
+                    </p>
                 </div>
                 
                 <div class="flex-end mt-4">
@@ -121,11 +110,9 @@ const onboardingPage = {
             <form id="step3Form">
                 <div class="form-group">
                     <label class="form-label">Target Job Titles</label>
-                    <input type="text" class="form-input" name="target_titles" 
-                        value="${(p.target_titles || []).join(', ')}" 
-                        placeholder="Product Manager, Engineering Lead (comma separated)" required>
+                    <div id="onboarding-titles-chip-input"></div>
                 </div>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Minimum Salary</label>
@@ -144,9 +131,7 @@ const onboardingPage = {
 
                 <div class="form-group">
                     <label class="form-label">Must-Have Skills/Keywords</label>
-                    <input type="text" class="form-input" name="must_have_keywords" 
-                        value="${(p.must_have_keywords || []).join(', ')}"
-                        placeholder="Python, React, AWS (comma separated)">
+                    <div id="onboarding-keywords-chip-input"></div>
                 </div>
 
                 <div class="flex-between mt-4">
@@ -230,23 +215,44 @@ const onboardingPage = {
 
     attachStep3Handler() {
         const form = document.getElementById('step3Form');
-        if (form) {
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const formData = new FormData(form);
-                
-                const data = {
-                    target_titles: formData.get('target_titles').split(',').map(s => s.trim()).filter(Boolean),
-                    must_have_keywords: formData.get('must_have_keywords').split(',').map(s => s.trim()).filter(Boolean),
-                    salary_min: parseInt(formData.get('salary_min')) || null,
-                    remote_preference: formData.get('remote_preference')
-                };
+        if (!form) return;
 
-                await api.updateProfile(data);
-                this.state.profile = { ...this.state.profile, ...data };
-                this.goToStep(4);
-            });
-        }
+        const p = this.state.profile;
+
+        // Setup chip inputs
+        const setupChipInput = (id, items, color, suggestions) => {
+            const container = document.getElementById(id);
+            if (!container) return;
+
+            const chipInput = components.chipInput(id.replace('-chip-input', ''), items, color, suggestions);
+            container.innerHTML = chipInput.html;
+            chipInput.setup();
+        };
+
+        setupChipInput('onboarding-titles-chip-input', p.target_titles || [], 'blue', SUGGESTIONS.jobTitles);
+        setupChipInput('onboarding-keywords-chip-input', p.must_have_keywords || [], 'red', SUGGESTIONS.keywords);
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+
+            const data = {
+                target_titles: window.chipInputs['onboarding-titles']?.getItems() || [],
+                must_have_keywords: window.chipInputs['onboarding-keywords']?.getItems() || [],
+                salary_min: parseInt(formData.get('salary_min')) || null,
+                remote_preference: formData.get('remote_preference')
+            };
+
+            // Validate at least one title is provided
+            if (data.target_titles.length === 0) {
+                components.notify('Please add at least one job title', 'error');
+                return;
+            }
+
+            await api.updateProfile(data);
+            this.state.profile = { ...this.state.profile, ...data };
+            this.goToStep(4);
+        });
     },
 
     async finishOnboarding() {

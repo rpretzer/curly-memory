@@ -157,29 +157,42 @@ const components = {
 
         return `
             <form id="searchForm" class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Start New Search</h3>
+                <div class="card-header flex-between">
+                    <div>
+                        <h3 class="card-title">Start New Search</h3>
+                        <p class="text-xs text-muted">Defaults loaded from your profile. Edit for this search only.</p>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="dashboardPage.resetSearchForm()">
+                        Reset to Defaults
+                    </button>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Job Titles <span style="color: var(--error);">*</span></label>
+                    <label class="form-label">Job Titles (this search only) <span style="color: var(--error);">*</span></label>
                     <div id="search-titles-chip-input"></div>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Locations <span style="color: var(--error);">*</span></label>
+                    <label class="form-label">Locations (this search only) <span style="color: var(--error);">*</span></label>
                     <div id="search-locations-chip-input"></div>
                 </div>
 
-                <div class="flex gap-2" style="flex-wrap: wrap;">
-                    <label class="checkbox-wrapper">
-                        <input type="checkbox" name="remote" ${isRemote ? 'checked' : ''}>
-                        <span>Remote only</span>
-                    </label>
-                    <label class="checkbox-wrapper">
-                        <input type="checkbox" name="generate_content" checked>
-                        <span>Generate content</span>
-                    </label>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Remote Preference</label>
+                        <select class="form-select" name="remote_preference">
+                            <option value="any" ${!profile.remote_preference || profile.remote_preference === 'any' ? 'selected' : ''}>Any</option>
+                            <option value="remote" ${profile.remote_preference === 'remote' ? 'selected' : ''}>Remote Only</option>
+                            <option value="hybrid" ${profile.remote_preference === 'hybrid' ? 'selected' : ''}>Hybrid</option>
+                            <option value="on-site" ${profile.remote_preference === 'on-site' ? 'selected' : ''}>On-Site</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-wrapper" style="margin-top: 1.75rem;">
+                            <input type="checkbox" name="generate_content" checked>
+                            <span>Generate content</span>
+                        </label>
+                    </div>
                 </div>
 
                 <div class="form-group">

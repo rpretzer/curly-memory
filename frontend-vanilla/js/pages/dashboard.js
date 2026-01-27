@@ -81,6 +81,46 @@ const dashboardPage = {
         router.navigate('/jobs');
     },
 
+    resetSearchForm() {
+        const form = document.getElementById('searchForm');
+        if (!form) return;
+
+        const defaults = window.searchFormDefaults || {
+            titles: [],
+            locations: [],
+            remote_preference: 'any',
+            max_results: 50
+        };
+
+        // Reset chip inputs
+        if (window.chipInputs['search-titles']) {
+            window.chipInputs['search-titles'].items = [...defaults.titles];
+            window.chipInputs['search-titles'].render();
+        }
+        if (window.chipInputs['search-locations']) {
+            window.chipInputs['search-locations'].items = [...defaults.locations];
+            window.chipInputs['search-locations'].render();
+        }
+
+        // Reset form fields
+        const remoteSelect = form.querySelector('select[name="remote_preference"]');
+        if (remoteSelect) {
+            remoteSelect.value = defaults.remote_preference;
+        }
+
+        const maxResultsInput = form.querySelector('input[name="max_results"]');
+        if (maxResultsInput) {
+            maxResultsInput.value = defaults.max_results;
+        }
+
+        const generateContentCheckbox = form.querySelector('input[name="generate_content"]');
+        if (generateContentCheckbox) {
+            generateContentCheckbox.checked = true;
+        }
+
+        components.notify('Form reset to defaults', 'info');
+    },
+
     attachSearchHandler() {
         const form = document.getElementById('searchForm');
         if (!form) return;
@@ -102,14 +142,39 @@ const dashboardPage = {
         setupChipInput('search-titles-chip-input', [], 'blue', SUGGESTIONS.jobTitles);
         setupChipInput('search-locations-chip-input', [], 'green', SUGGESTIONS.locations);
 
+        // Store default values for reset functionality
+        const formDefaults = {
+            titles: [],
+            locations: [],
+            remote_preference: 'any',
+            max_results: 50
+        };
+
         // Update with profile data when available
         api.getProfile().then(profile => {
             if (profile.target_titles && profile.target_titles.length > 0) {
                 setupChipInput('search-titles-chip-input', profile.target_titles, 'blue', SUGGESTIONS.jobTitles);
+                formDefaults.titles = profile.target_titles;
+            }
+            // Pre-populate locations from profile's location if available
+            if (profile.location) {
+                setupChipInput('search-locations-chip-input', [profile.location], 'green', SUGGESTIONS.locations);
+                formDefaults.locations = [profile.location];
+            }
+            // Pre-populate remote preference
+            if (profile.remote_preference) {
+                const remoteSelect = form.querySelector('select[name="remote_preference"]');
+                if (remoteSelect) {
+                    remoteSelect.value = profile.remote_preference;
+                    formDefaults.remote_preference = profile.remote_preference;
+                }
             }
         }).catch(error => {
             console.warn('Could not load profile for search form:', error);
         });
+
+        // Store defaults globally for reset button
+        window.searchFormDefaults = formDefaults;
 
         // Polling state
         let pollingInterval = null;
@@ -173,10 +238,12 @@ const dashboardPage = {
             }
 
             // Construct the payload
+            const remotePreference = formData.get('remote_preference');
             const searchConfig = {
                 titles: titles,
                 locations: locations,
-                remote: formData.get('remote') === 'on',
+                remote: remotePreference === 'remote',  // For backward compatibility with backend
+                remote_preference: remotePreference,
                 max_results: parseInt(formData.get('max_results')) || 50
             };
 

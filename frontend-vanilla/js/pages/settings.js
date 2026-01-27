@@ -27,11 +27,10 @@ const settingsPage = {
                 </div>
 
                 <div class="tabs">
-                    <button class="tab active" onclick="settingsPage.showTab('profile')">Profile & Resume</button>
+                    <button class="tab active" onclick="settingsPage.showTab('profile')">Profile & Preferences</button>
                     <button class="tab" onclick="settingsPage.showTab('search')">Search Parameters</button>
                     <button class="tab" onclick="settingsPage.showTab('autoapply')">Auto-Apply</button>
                     <button class="tab" onclick="settingsPage.showTab('scheduler')">Scheduler</button>
-                    <button class="tab" onclick="settingsPage.showTab('preferences')">Preferences</button>
                 </div>
 
                 <div id="settingsContent">
@@ -50,8 +49,7 @@ const settingsPage = {
                 (tab === 'profile' && i === 0) ||
                 (tab === 'search' && i === 1) ||
                 (tab === 'autoapply' && i === 2) ||
-                (tab === 'scheduler' && i === 3) ||
-                (tab === 'preferences' && i === 4)
+                (tab === 'scheduler' && i === 3)
             );
         });
 
@@ -105,9 +103,6 @@ const settingsPage = {
                     settingsContent.innerHTML = this.renderSchedulerTab({ running: false });
                 });
             }
-        } else if (tab === 'preferences') {
-            settingsContent.innerHTML = this.renderPreferencesTab();
-            this.attachPreferencesHandler();
         }
     },
 
@@ -199,6 +194,14 @@ const settingsPage = {
                         </div>` :
                         `<p class="text-muted italic">No resume uploaded</p>`
                     }
+                </div>
+
+                <div class="mt-4 pt-4" style="border-top: 1px solid var(--border);">
+                    <h4 class="text-sm font-semibold mb-3">Display Preferences</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        ${field('Theme', localStorage.getItem('theme') === 'light' ? 'Light Mode' : 'Dark Mode')}
+                        ${field('Show Dashboard Stats', localStorage.getItem('showStats') !== 'false' ? 'Yes' : 'No')}
+                    </div>
                 </div>
             </div>
         `;
@@ -300,17 +303,42 @@ const settingsPage = {
                     <div class="form-group">
                         <label class="form-label">Upload Resume (PDF, DOC, DOCX)</label>
                         <input type="file" id="resumeFileEdit" accept=".pdf,.doc,.docx"
-                            class="form-input" style="padding: 0.5rem;">
+                            class="form-input" style="padding: 0.5rem;"
+                            onchange="settingsPage.uploadResumeInline()">
+                        <p class="text-xs text-muted mt-1">File will upload automatically when selected</p>
                     </div>
-                    <button type="button" class="btn btn-sm btn-secondary" onclick="settingsPage.uploadResumeInline()">
-                        Upload Resume
-                    </button>
                     ${profile && profile.resume_text ? `
-                        <div class="mt-2">
-                            <p class="text-sm text-muted">Current resume: ${profile.resume_text.length} characters loaded</p>
-                            ${profile.resume_file_path ? `<p class="text-xs text-muted">File: ${components.escapeHtml(profile.resume_file_path.split('/').pop())}</p>` : ''}
+                        <div class="mt-2 p-2" style="background: var(--bg-secondary); border-radius: var(--radius);">
+                            <p class="text-sm" style="color: var(--success);">✓ Resume loaded (${profile.resume_text.length} characters)</p>
+                            ${profile.resume_file_path ? `<p class="text-xs text-muted mt-1">File: ${components.escapeHtml(profile.resume_file_path.split('/').pop())}</p>` : ''}
                         </div>
                     ` : ''}
+                </div>
+
+                <div class="card p-3 mt-3" style="background-color: var(--bg-tertiary);">
+                    <h4 class="text-sm font-semibold mb-3">Display Preferences</h4>
+
+                    <div class="form-group">
+                        <label class="form-label">Theme</label>
+                        <div class="flex gap-2" style="flex-wrap: wrap;">
+                            <label class="checkbox-wrapper">
+                                <input type="radio" name="theme" value="dark" ${(localStorage.getItem('theme') || 'dark') === 'dark' ? 'checked' : ''}>
+                                <span>Dark Mode</span>
+                            </label>
+                            <label class="checkbox-wrapper">
+                                <input type="radio" name="theme" value="light" ${localStorage.getItem('theme') === 'light' ? 'checked' : ''}>
+                                <span>Light Mode</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-wrapper">
+                            <input type="checkbox" id="showStatsToggle" name="showStats" ${localStorage.getItem('showStats') !== 'false' ? 'checked' : ''}>
+                            <span>Show Statistics Cards on Dashboard</span>
+                        </label>
+                        <p class="text-xs text-muted mt-1">Toggle visibility of stats boxes (Total Runs, Jobs Found, etc.)</p>
+                    </div>
                 </div>
 
                 <div class="flex-end gap-2 mt-4">
@@ -365,11 +393,7 @@ const settingsPage = {
                     <div class="card-header">
                         <h3 class="card-title">Default Search Parameters</h3>
                     </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Default Job Titles</label>
-                        <div id="default-titles-chip-input"></div>
-                    </div>
+                    <p class="text-sm text-muted mb-3">ℹ️ Job titles and locations are configured in your Profile settings and will be used as defaults for searches.</p>
 
                     <div class="form-group">
                         <label class="form-label">Default Locations</label>
@@ -467,38 +491,52 @@ const settingsPage = {
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Queue approved jobs for application</label>
-                    <div class="flex gap-1">
-                        <button class="btn btn-secondary" onclick="settingsPage.queueApprovedJobs()">
-                            Queue All Approved
-                        </button>
-                        <button class="btn btn-secondary" onclick="settingsPage.queueHighScoreJobs()">
-                            Queue High Score (8+)
-                        </button>
-                    </div>
-                </div>
-
-                <div class="form-group mt-2">
-                    <label class="form-label">Process applications</label>
-                    <div class="flex gap-1">
-                        <button class="btn btn-primary" onclick="settingsPage.processBatch(5)"
-                            ${!status.enabled ? 'disabled' : ''}>
-                            Process 5 Jobs
-                        </button>
+                    <label class="form-label">Main Actions</label>
+                    <div class="flex gap-2" style="flex-wrap: wrap;">
                         <button class="btn btn-primary" onclick="settingsPage.startAutoApply()"
                             ${!status.enabled ? 'disabled' : ''}>
-                            Start Auto-Apply
+                            ${status.queue_size > 0 ? `Start Processing (${status.queue_size} in queue)` : 'Start Auto-Apply'}
                         </button>
                         <button class="btn btn-secondary" onclick="settingsPage.stopAutoApply()">
                             Stop
                         </button>
                     </div>
+                    <p class="text-xs text-muted mt-1">Automatically processes approved jobs from the queue</p>
                 </div>
 
-                <div class="form-group mt-2">
-                    <button class="btn btn-sm btn-secondary" onclick="settingsPage.clearQueue()">
-                        Clear Queue
+                <div class="mt-3">
+                    <button class="btn btn-sm btn-secondary" onclick="settingsPage.toggleQueueManagement()" id="toggleQueueBtn">
+                        Advanced Queue Management ▼
                     </button>
+                </div>
+
+                <div id="queueManagementSection" class="hidden mt-3" style="padding: 1rem; background: var(--bg-tertiary); border-radius: var(--radius);">
+                    <div class="form-group">
+                        <label class="form-label">Add Jobs to Queue</label>
+                        <div class="flex gap-1" style="flex-wrap: wrap;">
+                            <button class="btn btn-sm btn-secondary" onclick="settingsPage.queueApprovedJobs()">
+                                Queue All Approved
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="settingsPage.queueHighScoreJobs()">
+                                Queue High Score (8+)
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group mt-2">
+                        <label class="form-label">Manual Processing</label>
+                        <button class="btn btn-sm btn-secondary" onclick="settingsPage.processBatch(5)"
+                            ${!status.enabled ? 'disabled' : ''}>
+                            Process Next 5 Jobs
+                        </button>
+                    </div>
+
+                    <div class="form-group mt-2">
+                        <label class="form-label">Queue Management</label>
+                        <button class="btn btn-sm btn-danger" onclick="settingsPage.clearQueue()">
+                            Clear Entire Queue
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -583,13 +621,14 @@ const settingsPage = {
     },
 
     renderSchedulerTab(status) {
+        // Get default titles from profile (will be used by setup function)
         const schedule = status.schedule || {
             enabled: status.running || false,
             frequency: 'daily',
             time: '09:00',
             days: [],
             search_params: {
-                titles: ['Product Manager'],
+                titles: [],  // Will be populated from profile
                 locations: ['Remote, US'],
                 remote: true,
                 max_results: 50
@@ -641,6 +680,7 @@ const settingsPage = {
 
                     <div class="card p-3 mt-2" style="background: var(--bg-tertiary); border-top: 2px solid var(--border);">
                         <h4 class="text-sm font-semibold mb-2">Search Parameters</h4>
+                        <p class="text-xs text-muted mb-3">ℹ️ Defaults loaded from your Profile. Edit here to customize scheduled searches.</p>
 
                         <div class="form-group">
                             <label class="form-label">Job Titles</label>
@@ -654,10 +694,13 @@ const settingsPage = {
 
                         <div class="form-row">
                             <div class="form-group">
-                                <label class="checkbox-wrapper">
-                                    <input type="checkbox" name="remote" ${schedule.search_params.remote ? 'checked' : ''}>
-                                    <span>Remote only</span>
-                                </label>
+                                <label class="form-label">Remote Preference</label>
+                                <select class="form-select" name="remote_preference">
+                                    <option value="any" ${!schedule.search_params.remote_preference || schedule.search_params.remote_preference === 'any' ? 'selected' : ''}>Any</option>
+                                    <option value="remote" ${schedule.search_params.remote_preference === 'remote' || (schedule.search_params.remote && !schedule.search_params.remote_preference) ? 'selected' : ''}>Remote Only</option>
+                                    <option value="hybrid" ${schedule.search_params.remote_preference === 'hybrid' ? 'selected' : ''}>Hybrid</option>
+                                    <option value="on-site" ${schedule.search_params.remote_preference === 'on-site' ? 'selected' : ''}>On-Site</option>
+                                </select>
                             </div>
 
                             <div class="form-group">
@@ -741,14 +784,37 @@ const settingsPage = {
             };
 
             try {
-                // Save and get updated profile
+                // Save profile data
                 const updatedProfile = await api.updateProfile(data);
 
-                components.notify('Profile saved successfully!', 'success');
+                // Save preferences to localStorage
+                const theme = formData.get('theme') || 'dark';
+                const showStats = formData.get('showStats') === 'on';
+
+                localStorage.setItem('theme', theme);
+                localStorage.setItem('showStats', showStats ? 'true' : 'false');
+
+                // Apply theme immediately
+                if (theme === 'light') {
+                    document.body.classList.add('light-mode');
+                } else {
+                    document.body.classList.remove('light-mode');
+                }
+
+                components.notify('Profile and preferences saved successfully!', 'success');
 
                 // UX: Switch back to view mode with updated data
                 const settingsContent = document.getElementById('settingsContent');
                 settingsContent.innerHTML = this.renderProfileTab(updatedProfile, 'view');
+
+                // Reload dashboard if we're changing stats visibility
+                if (window.location.hash === '#/' || window.location.hash === '') {
+                    setTimeout(() => {
+                        if (window.dashboardPage) {
+                            window.dashboardPage.render();
+                        }
+                    }, 500);
+                }
 
             } catch (error) {
                 components.notify(`Error saving profile: ${error.message}`, 'error');
@@ -775,7 +841,6 @@ const settingsPage = {
         };
 
         const search = config.search || {};
-        setupChipInput('default-titles-chip-input', search.default_titles || [], 'blue', SUGGESTIONS.jobTitles);
         setupChipInput('default-locations-chip-input', search.default_locations || [], 'green', SUGGESTIONS.locations);
 
         form.addEventListener('submit', async (e) => {
@@ -794,7 +859,6 @@ const settingsPage = {
                 ...config,
                 search: {
                     ...config.search,
-                    default_titles: window.chipInputs['default-titles']?.getItems() || [],
                     default_locations: window.chipInputs['default-locations']?.getItems() || [],
                     default_remote_preference: formData.get('default_remote_preference'),
                     default_salary_min: parseInt(formData.get('default_salary_min')) || undefined
@@ -839,10 +903,13 @@ const settingsPage = {
 
         // Setup chip inputs for schedule search parameters
         const setupScheduleChips = () => {
-            api.getSchedulerStatus().then(status => {
+            Promise.all([
+                api.getSchedulerStatus(),
+                api.getProfile()
+            ]).then(([status, profile]) => {
                 const schedule = status.schedule || {
                     search_params: {
-                        titles: ['Product Manager'],
+                        titles: [],
                         locations: ['Remote, US']
                     }
                 };
@@ -856,8 +923,31 @@ const settingsPage = {
                     chipInput.setup();
                 };
 
-                setupChipInput('schedule-titles-chip-input', schedule.search_params?.titles || ['Product Manager'], 'blue', SUGGESTIONS.jobTitles);
-                setupChipInput('schedule-locations-chip-input', schedule.search_params?.locations || ['Remote, US'], 'green', SUGGESTIONS.locations);
+                // Use titles from schedule if available, otherwise from profile
+                const titles = (schedule.search_params?.titles && schedule.search_params.titles.length > 0)
+                    ? schedule.search_params.titles
+                    : (profile.target_titles || []);
+
+                // Use location from profile if schedule doesn't have it
+                const locations = (schedule.search_params?.locations && schedule.search_params.locations.length > 0)
+                    ? schedule.search_params.locations
+                    : (profile.location ? [profile.location] : ['Remote, US']);
+
+                setupChipInput('schedule-titles-chip-input', titles, 'blue', SUGGESTIONS.jobTitles);
+                setupChipInput('schedule-locations-chip-input', locations, 'green', SUGGESTIONS.locations);
+            }).catch(error => {
+                console.error('Error setting up scheduler chips:', error);
+                // Fallback to empty arrays
+                const setupChipInput = (id, items, color, suggestions) => {
+                    const container = document.getElementById(id);
+                    if (!container) return;
+
+                    const chipInput = components.chipInput(id.replace('-chip-input', ''), items, color, suggestions);
+                    container.innerHTML = chipInput.html;
+                    chipInput.setup();
+                };
+                setupChipInput('schedule-titles-chip-input', [], 'blue', SUGGESTIONS.jobTitles);
+                setupChipInput('schedule-locations-chip-input', [], 'green', SUGGESTIONS.locations);
             });
         };
 
@@ -904,6 +994,7 @@ const settingsPage = {
                 days.push(parseInt(cb.value));
             });
 
+            const remotePreference = formData.get('remote_preference');
             const scheduleConfig = {
                 enabled: formData.get('enabled') === 'on',
                 frequency: formData.get('frequency'),
@@ -912,7 +1003,8 @@ const settingsPage = {
                 search_params: {
                     titles: window.chipInputs['schedule-titles']?.getItems() || [],
                     locations: window.chipInputs['schedule-locations']?.getItems() || [],
-                    remote: formData.get('remote') === 'on',
+                    remote: remotePreference === 'remote',  // For backward compatibility
+                    remote_preference: remotePreference,
                     max_results: parseInt(formData.get('max_results')) || 50
                 }
             };
@@ -1022,6 +1114,21 @@ const settingsPage = {
         }
     },
 
+    toggleQueueManagement() {
+        const section = document.getElementById('queueManagementSection');
+        const btn = document.getElementById('toggleQueueBtn');
+        if (section && btn) {
+            const isHidden = section.classList.contains('hidden');
+            if (isHidden) {
+                section.classList.remove('hidden');
+                btn.textContent = 'Advanced Queue Management ▲';
+            } else {
+                section.classList.add('hidden');
+                btn.textContent = 'Advanced Queue Management ▼';
+            }
+        }
+    },
+
     // Auto-Apply Methods
     async enableAutoApply() {
         try {
@@ -1126,96 +1233,6 @@ const settingsPage = {
         }
     },
 
-    renderPreferencesTab() {
-        // Get current preferences from localStorage
-        const currentTheme = localStorage.getItem('theme') || 'dark';
-        const showStats = localStorage.getItem('showStats') !== 'false'; // default true
-
-        return `
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Display Preferences</h3>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Theme</label>
-                    <div class="flex gap-2" style="flex-wrap: wrap;">
-                        <label class="checkbox-wrapper">
-                            <input type="radio" name="theme" value="dark" ${currentTheme === 'dark' ? 'checked' : ''}>
-                            <span>Dark Mode</span>
-                        </label>
-                        <label class="checkbox-wrapper">
-                            <input type="radio" name="theme" value="light" ${currentTheme === 'light' ? 'checked' : ''}>
-                            <span>Light Mode</span>
-                        </label>
-                    </div>
-                    <p class="text-xs text-muted mt-1">Choose your preferred color theme</p>
-                </div>
-
-                <div class="form-group">
-                    <label class="checkbox-wrapper">
-                        <input type="checkbox" id="showStatsToggle" ${showStats ? 'checked' : ''}>
-                        <span>Show Statistics Cards on Dashboard</span>
-                    </label>
-                    <p class="text-xs text-muted mt-1">Toggle visibility of stats boxes (Total Runs, Jobs Found, etc.)</p>
-                </div>
-
-                <div class="flex-end gap-2 mt-4">
-                    <button type="button" class="btn btn-primary" onclick="settingsPage.savePreferences()">
-                        Save Preferences
-                    </button>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">About</h3>
-                </div>
-                <p class="text-sm text-muted">Job Search Pipeline - Vanilla Frontend</p>
-                <p class="text-xs text-muted mt-2">Refactored to match Next.js UI with horizontal navigation, light mode support, and progress tracking.</p>
-            </div>
-        `;
-    },
-
-    attachPreferencesHandler() {
-        // Listen for theme changes
-        const themeRadios = document.querySelectorAll('input[name="theme"]');
-        themeRadios.forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                this.applyTheme(e.target.value);
-            });
-        });
-    },
-
-    applyTheme(theme) {
-        if (theme === 'light') {
-            document.body.classList.add('light-mode');
-        } else {
-            document.body.classList.remove('light-mode');
-        }
-        localStorage.setItem('theme', theme);
-    },
-
-    savePreferences() {
-        const theme = document.querySelector('input[name="theme"]:checked')?.value || 'dark';
-        const showStats = document.getElementById('showStatsToggle')?.checked || false;
-
-        localStorage.setItem('theme', theme);
-        localStorage.setItem('showStats', showStats ? 'true' : 'false');
-
-        this.applyTheme(theme);
-
-        components.notify('Preferences saved!', 'success');
-
-        // Reload dashboard if we're changing stats visibility
-        if (window.location.hash === '#/' || window.location.hash === '') {
-            setTimeout(() => {
-                if (window.dashboardPage) {
-                    window.dashboardPage.render();
-                }
-            }, 500);
-        }
-    }
 };
 
 window.settingsPage = settingsPage;
