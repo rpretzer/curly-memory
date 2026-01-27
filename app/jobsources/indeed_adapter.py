@@ -142,21 +142,52 @@ class IndeedAdapter(BaseJobSource):
                     )
                     
                     logger.info(f"Response status: {response.status_code}")
-                    logger.info(f"Response size: {len(response.text)} characters")
-                    logger.info(f"Final URL: {response.url}")
-                    
+                    logger.info(f"Response encoding: {response.encoding}")
+                    logger.info(f"Content-Type: {response.headers.get('Content-Type', 'unknown')}")
+
                     # Check status before processing
                     if response.status_code == 403:
                         logger.error("=== 403 FORBIDDEN - Rate limited or blocked ===")
                         logger.error(f"Response preview: {response.text[:500]}")
                         break
-                    
+
                     response.raise_for_status()
-                    
-                    # Check for CAPTCHA more carefully (only if we see specific patterns)
-                    content_preview = response.text[:2000].lower()
-                    if 'captcha' in content_preview and ('verify' in content_preview or 'robot' in content_preview):
-                        logger.warning("CAPTCHA detected on Indeed")
+
+                    # Validate that we got actual HTML (not binary garbage or error page)
+                    try:
+                        content_preview = response.text[:2000]
+                        logger.info(f"Response size: {len(content_preview)} characters (preview)")
+
+                        # Check if response looks like valid HTML
+                        if not any(tag in content_preview.lower() for tag in ['<html', '<head', '<body', '<!doctype']):
+                            logger.error("Response doesn't look like valid HTML!")
+                            logger.error(f"First 200 chars: {content_preview[:200]}")
+
+                            # Check if it's binary data
+                            try:
+                                content_preview.encode('ascii')
+                            except UnicodeEncodeError:
+                                logger.error("Response contains non-ASCII binary data - likely blocked by Indeed")
+                                logger.error("Indeed may have detected bot activity. Try:")
+                                logger.error("  1. Use ScrapeOps or HasData API (configure in config.yaml)")
+                                logger.error("  2. Add delays between requests")
+                                logger.error("  3. Use residential proxies")
+                                break
+
+                        # Check for CAPTCHA more carefully
+                        content_lower = content_preview.lower()
+                        if 'captcha' in content_lower or 'recaptcha' in content_lower:
+                            logger.warning("CAPTCHA detected on Indeed - bot detection triggered")
+                            break
+
+                        # Check for rate limiting messages
+                        if 'rate limit' in content_lower or 'too many requests' in content_lower:
+                            logger.warning("Rate limiting detected on Indeed")
+                            break
+
+                    except Exception as encoding_err:
+                        logger.error(f"Failed to decode response text: {encoding_err}")
+                        logger.error(f"Response headers: {dict(response.headers)}")
                         break
                     
                     logger.info("Parsing HTML with BeautifulSoup...")
@@ -742,15 +773,41 @@ class IndeedAdapter(BaseJobSource):
     
     @retry_with_backoff(max_retries=3, initial_delay=2.0)
     def _make_request_with_retry(self, url: str, params: Dict, proxies: Optional[Dict] = None):
-        """Make a request with retry logic."""
+        """Make a request with retry logic and proper encoding handling."""
+        # Ensure we have proper headers for each request
+        headers = {
+            'User-Agent': self.session.headers.get('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'max-age=0',
+        }
+
         response = self.session.get(
             url,
             params=params,
+            headers=headers,
             timeout=15,
             allow_redirects=True,
             proxies=proxies
         )
         response.raise_for_status()
+
+        # Force encoding to UTF-8 if Indeed returns bad encoding
+        if response.encoding and response.encoding.lower() not in ['utf-8', 'utf8']:
+            logger.warning(f"Indeed returned encoding: {response.encoding}, forcing UTF-8")
+            response.encoding = 'utf-8'
+        elif not response.encoding:
+            # Auto-detect encoding
+            response.encoding = response.apparent_encoding
+            logger.info(f"Auto-detected encoding: {response.encoding}")
+
         return response
     
     def _search_via_scrapeops(

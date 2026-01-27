@@ -9,11 +9,11 @@ search:
   - Charlotte, NC
   default_remote_preference: remote
   default_salary_min: 115000
-  default_max_results_per_source: 150  # Increased from 100 for more results
-  search_timeout_seconds: 90  # Increased timeout per source for more thorough searches
-  enable_parallel_search: true  # Search multiple sources in parallel
-  min_query_length: 5  # Increased from 3 - reject very short/generic queries
-  max_total_results: 500  # Maximum total results across all sources
+  default_max_results_per_source: 150
+  search_timeout_seconds: 90
+  enable_parallel_search: true
+  min_query_length: 5
+  max_total_results: 500
 scoring:
   title_match_weight: 8
   vertical_match_weight: 6
@@ -32,12 +32,12 @@ verticals:
 - machine learning
 - ai
 thresholds:
-  min_relevance_score: 4.5  # Balanced threshold - filters low-quality but keeps good matches
-  high_relevance_score: 7.5  # High-quality jobs (auto-approve candidate)
-  auto_approval_threshold: 8.0  # Auto-approve threshold
+  min_relevance_score: 4.5
+  high_relevance_score: 7.5
+  auto_approval_threshold: 5
 llm:
-  provider: ollama  # Switched to Ollama to avoid OpenAI quota/rate limit issues
-  model: llama3.2  # Default Ollama model - change to your preferred model (llama3.1, mistral, etc.)
+  provider: ollama
+  model: llama3.2
   temperature: 0.7
   top_p: 1.0
   max_tokens: 2000
@@ -46,38 +46,38 @@ llm:
   ollama_base_url: http://localhost:11434
 job_sources:
   linkedin:
-    enabled: false  # Temporarily disabled - scraping is being blocked
-    max_results: 150  # Increased from 100 for more results
-    rate_limit_delay: 2  # Reduced from 3 for faster searches (be careful with rate limits)
-    timeout_seconds: 90  # Increased timeout for more thorough searches
+    enabled: false
+    max_results: 150
+    rate_limit_delay: 2
+    timeout_seconds: 90
     use_playwright: true
     use_apify: false
     use_mantiks: false
     max_retries: 3
     retry_delay: 1
-    # LinkedIn credentials should be set via environment variables:
-    # LINKEDIN_EMAIL and LINKEDIN_PASSWORD
-    linkedin_email: ${LINKEDIN_EMAIL}
-    linkedin_password: ${LINKEDIN_PASSWORD}
+    # LinkedIn credentials should be entered via Settings UI (stored encrypted in database)
+    # NOT stored here in plaintext!
   indeed:
     enabled: true
-    max_results: 150  # Increased from 100 for more results
-    rate_limit_delay: 2  # Reduced for faster searches
-    timeout_seconds: 75  # Increased timeout for more thorough searches
-    use_playwright: true  # Enabled: HTML scraping broken due to JS rendering
-    use_scrapeops: true
+    max_results: 150
+    rate_limit_delay: 2
+    timeout_seconds: 75
+    use_playwright: true
+    use_scrapeops: false  # Set to true and add API key below to bypass Indeed bot detection
+    scrapeops_api_key: null  # Get free API key from https://scrapeops.io/
     use_hasdata: false
+    hasdata_api_key: null  # Alternative: https://hasdata.com/
     max_retries: 3
     retry_delay: 2
   wellfound:
-    enabled: false  # Disabled: 403 Forbidden - site blocking automated requests
+    enabled: false
     max_results: 100
     rate_limit_delay: 3
     timeout_seconds: 45
     max_retries: 3
     retry_delay: 1
   monster:
-    enabled: false  # Disabled - returns 403/blocked
+    enabled: false
     max_results: 150
     rate_limit_delay: 2
     timeout_seconds: 75
@@ -87,122 +87,219 @@ job_sources:
     max_retries: 3
     retry_delay: 2
   greenhouse:
-    enabled: true  # Uses official public API - most reliable source
+    enabled: true
     rate_limit_delay: 0.5
     include_content: true
-    # Companies to search - add more Greenhouse board tokens as needed
-    # Find board token from URL: boards.greenhouse.io/{board_token}
     companies:
-      - stripe
-      - airbnb
-      - cloudflare
-      - figma
-      - notion
-      - databricks
-      - plaid
-      - reddit
-      - coinbase
-      - ramp
-      - robinhood
-      - doordash
-      - instacart
-      - affirm
-      - brex
-      - chime
-      - gusto
-      - rippling
-      - airtable
+    - stripe
+    - airbnb
+    - cloudflare
+    - figma
+    - notion
+    - databricks
+    - plaid
+    - reddit
+    - coinbase
+    - ramp
+    - robinhood
+    - doordash
+    - instacart
+    - affirm
+    - brex
+    - chime
+    - gusto
+    - rippling
+    - airtable
   workday:
-    enabled: true  # Direct API access to company Workday instances
-    rate_limit_delay: 1.0
+    enabled: true
+    rate_limit_delay: 1
     results_per_company: 50
-    # Companies to search - format: [slug, wd_instance, site_name, display_name]
-    # Find these from company career page URLs like: company.wd5.myworkdayjobs.com/en-US/site
     companies:
-      - ["adobe", "wd5", "external_experienced", "Adobe"]
-      - ["salesforce", "wd12", "External_Career_Site", "Salesforce"]
-      - ["visa", "wd5", "Visa", "Visa"]
-      - ["mastercard", "wd1", "CorporateCareers", "Mastercard"]
-      - ["servicenow", "wd1", "ServiceNow", "ServiceNow"]
-      - ["nvidia", "wd5", "NVIDIAExternalCareerSite", "NVIDIA"]
-      - ["atlassian", "wd5", "external_career_site", "Atlassian"]
-      - ["okta", "wd1", "Okta", "Okta"]
-      - ["crowdstrike", "wd5", "crowdstrikecareers", "CrowdStrike"]
-      - ["docusign", "wd5", "External", "DocuSign"]
+    - - adobe
+      - wd5
+      - external_experienced
+      - Adobe
+    - - salesforce
+      - wd12
+      - External_Career_Site
+      - Salesforce
+    - - visa
+      - wd5
+      - Visa
+      - Visa
+    - - mastercard
+      - wd1
+      - CorporateCareers
+      - Mastercard
+    - - servicenow
+      - wd1
+      - ServiceNow
+      - ServiceNow
+    - - nvidia
+      - wd5
+      - NVIDIAExternalCareerSite
+      - NVIDIA
+    - - atlassian
+      - wd5
+      - external_career_site
+      - Atlassian
+    - - okta
+      - wd1
+      - Okta
+      - Okta
+    - - crowdstrike
+      - wd5
+      - crowdstrikecareers
+      - CrowdStrike
+    - - docusign
+      - wd5
+      - External
+      - DocuSign
 pipeline:
   recovery:
     enabled: true
-    timeout_minutes: 120  # How long before run considered stuck
+    timeout_minutes: 120
   content_generation:
-    max_retries: 2  # Number of retry attempts for transient failures
-    retry_delay_seconds: 5  # Base delay between retries (exponential backoff)
-
+    max_retries: 2
+    retry_delay_seconds: 5
 features:
   enable_playwright: true
-  enable_auto_apply: true  # Auto-queue jobs when approved
+  enable_auto_apply: true
   enable_content_generation: true
   enable_email_notifications: false
 scheduler:
   enabled: true
   run_frequency_hours: 24
   run_at_time: 09:00
-
-# Application Defaults - used when user profile fields are not set
-# Users can override these by updating their profile via the API
 application_defaults:
-  work_authorization: "Yes, I am authorized to work in the United States"
+  work_authorization: Yes, I am authorized to work in the United States
   visa_sponsorship_required: false
-  visa_sponsorship_response: "No, I do not require visa sponsorship"
-  notice_period: "2-3 weeks"
-  notice_period_response: "I am available to start within {notice_period} of offer acceptance."
+  visa_sponsorship_response: No, I do not require visa sponsorship
+  notice_period: 2-3 weeks
+  notice_period_response: I am available to start within {notice_period} of offer
+    acceptance.
   salary_range:
     min: 115000
     max: 200000
-    response_template: "My salary expectation is in the range of ${salary_min}-${salary_max}, depending on the total compensation package and responsibilities."
-  remote_preference: "flexible"
-  remote_response: "Yes, I am comfortable working remotely and have extensive experience with remote collaboration. I am also open to hybrid arrangements if preferred."
-  relocation_preference: "open to discussing"
-  relocation_response: "I am open to discussing relocation for the right opportunity."
-  # LLM fallback settings for questions without template matches
+    response_template: My salary expectation is in the range of ${salary_min}-${salary_max},
+      depending on the total compensation package and responsibilities.
+  remote_preference: flexible
+  remote_response: Yes, I am comfortable working remotely and have extensive experience
+    with remote collaboration. I am also open to hybrid arrangements if preferred.
+  relocation_preference: open to discussing
+  relocation_response: I am open to discussing relocation for the right opportunity.
   llm_fallback:
     enabled: true
     max_tokens: 150
-
-# Advanced RAG Configuration
 rag:
   enabled: true
-  # Embedding configuration
   embeddings:
-    provider: "huggingface"  # Options: "openai", "ollama", "huggingface"
-    model: "sentence-transformers/all-MiniLM-L6-v2"  # HuggingFace model for local embeddings
-    # For OpenAI: "text-embedding-3-small" or "text-embedding-3-large"
-    # For Ollama: "llama3.2" or other Ollama embedding model
-  # Semantic chunking configuration
+    provider: huggingface
+    model: sentence-transformers/all-MiniLM-L6-v2
   chunking:
     chunk_size: 500
     chunk_overlap: 50
-    similarity_threshold: 0.7  # Lower = more chunks (0.0-1.0)
+    similarity_threshold: 0.7
     min_chunk_size: 100
-  # Two-stage retrieval configuration
   retrieval:
-    stage1_k: 50  # Number of candidates to retrieve in first stage
-    stage2_k: 5   # Number of final results after reranking
-    rerank_threshold: 0.5  # Minimum rerank score (optional)
-    reranker_model: "BAAI/bge-reranker-base"  # Re-ranker model name
-  # HyDE configuration
+    stage1_k: 50
+    stage2_k: 5
+    rerank_threshold: 0.5
+    reranker_model: BAAI/bge-reranker-base
   hyde:
-    enabled: true  # Enable Hypothetical Document Embeddings
-    template: null  # Custom template (null = use default)
-  # RAG agent configuration
+    enabled: true
+    template: null
   agent:
-    max_iterations: 3  # Maximum retrieval cycles
-    min_relevance_score: 0.7  # Minimum relevance score (0.0-1.0)
-  # Vector store configuration
+    max_iterations: 3
+    min_relevance_score: 0.7
   vector_store:
-    collection_name: "job_descriptions"
-    persist_directory: "./vector_store"
-
+    collection_name: job_descriptions
+    persist_directory: ./vector_store
 content_prompts:
-  resume_summary: "Generate 3-5 tailored bullet points for a resume based on the job description.\nFocus on matching the job requirements with relevant experience.\n\nJob Requirements:\n{job_description}\n{similar_jobs_context}\n\nCandidate Profile:\n- Current Title: {current_title}\n- Skills: {skills}\n- Experience: {experience_summary}\n\nGenerate bullet points that:\n1. Match key job requirements\n2. Highlight relevant experience\n3. Use action verbs and quantify achievements when possible\n4. Keep each bullet to 1-2 lines"
-  cover_letter_template: "Write a professional cover letter for this position.\nKeep it concise (200-300 words) and highlight relevant experience.\n\nJob:\nTitle: {job_title}\nCompany: {company}\nDescription: {job_description}\n\nCandidate:\nName: {name}\nCurrent Title: {current_title}\nSkills: {skills}\nExperience Summary: {experience_summary}\n\nWrite a compelling cover letter that:\n1. Expresses genuine interest in the role\n2. Highlights 2-3 most relevant experiences/skills\n3. Shows understanding of the company/role\n4. Ends with a call to action"
-  application_answers: "Generate a concise answer (50-100 words) to this application question\nbased on the job requirements and candidate profile.\n\nQuestion: {question}\n\nJob: {job_title} at {company}\nJob Requirements: {job_description}\n\nCandidate:\nSkills: {skills}\nExperience: {experience_summary}\n\nProvide a direct, professional answer that demonstrates relevant experience."
+  resume_summary: 'Generate 3-5 tailored bullet points for a resume based on the job
+    description.
+
+    Focus on matching the job requirements with relevant experience.
+
+
+    Job Requirements:
+
+    {job_description}
+
+    {similar_jobs_context}
+
+
+    Candidate Profile:
+
+    - Current Title: {current_title}
+
+    - Skills: {skills}
+
+    - Experience: {experience_summary}
+
+
+    Generate bullet points that:
+
+    1. Match key job requirements
+
+    2. Highlight relevant experience
+
+    3. Use action verbs and quantify achievements when possible
+
+    4. Keep each bullet to 1-2 lines'
+  cover_letter_template: 'Write a professional cover letter for this position.
+
+    Keep it concise (200-300 words) and highlight relevant experience.
+
+
+    Job:
+
+    Title: {job_title}
+
+    Company: {company}
+
+    Description: {job_description}
+
+
+    Candidate:
+
+    Name: {name}
+
+    Current Title: {current_title}
+
+    Skills: {skills}
+
+    Experience Summary: {experience_summary}
+
+
+    Write a compelling cover letter that:
+
+    1. Expresses genuine interest in the role
+
+    2. Highlights 2-3 most relevant experiences/skills
+
+    3. Shows understanding of the company/role
+
+    4. Ends with a call to action'
+  application_answers: 'Generate a concise answer (50-100 words) to this application
+    question
+
+    based on the job requirements and candidate profile.
+
+
+    Question: {question}
+
+
+    Job: {job_title} at {company}
+
+    Job Requirements: {job_description}
+
+
+    Candidate:
+
+    Skills: {skills}
+
+    Experience: {experience_summary}
+
+
+    Provide a direct, professional answer that demonstrates relevant experience.'
