@@ -214,12 +214,12 @@ class AgentLog(Base):
 
 class UserProfile(Base):
     """User profile and resume data for content generation."""
-    
+
     __tablename__ = "user_profiles"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False)
-    
+
     # Contact information
     email = Column(String(200), nullable=True)
     phone = Column(String(50), nullable=True)
@@ -230,23 +230,29 @@ class UserProfile(Base):
     portfolio_url = Column(String(500), nullable=True)
     github_url = Column(String(500), nullable=True)
     other_links = Column(JSON, nullable=True)  # Additional links (personal website, blog, etc.)
-    
+
     # Professional information
     current_title = Column(String(200), nullable=True)
     target_titles = Column(JSON, nullable=True)  # List of target job titles
     skills = Column(JSON, nullable=True)  # List of skills
     experience_summary = Column(Text, nullable=True)
-    
+
     # Resume content
     resume_text = Column(Text, nullable=True)  # Full resume text
     resume_bullet_points = Column(JSON, nullable=True)  # Structured bullet points
     resume_file_path = Column(String(500), nullable=True)  # Path to uploaded resume file
-    
+
     # Preferences
     target_companies = Column(JSON, nullable=True)  # List of target companies
     must_have_keywords = Column(JSON, nullable=True)
     nice_to_have_keywords = Column(JSON, nullable=True)
     is_onboarded = Column(Boolean, default=False)
+
+    # Company preferences (for RAG-based suggestions)
+    preferred_industries = Column(JSON, nullable=True)  # ["fintech", "insurtech", "ai"]
+    preferred_company_sizes = Column(JSON, nullable=True)  # ["startup", "mid-size"]
+    preferred_company_stages = Column(JSON, nullable=True)  # ["series-b", "unicorn"]
+    preferred_tech_stack = Column(JSON, nullable=True)  # ["python", "kubernetes"]
 
     # Application preferences (for auto-apply)
     salary_min = Column(Integer, nullable=True)  # Minimum salary expectation
@@ -263,6 +269,39 @@ class UserProfile(Base):
     
     def __repr__(self):
         return f"<UserProfile(id={self.id}, name='{self.name}')>"
+
+
+class Company(Base):
+    """Company information for RAG-based company suggestions."""
+
+    __tablename__ = "companies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, unique=True, index=True)
+    normalized_name = Column(String(200), nullable=False, index=True)  # For matching
+
+    # Core attributes
+    industries = Column(JSON, nullable=True)  # ["fintech", "payments", "infrastructure"]
+    verticals = Column(JSON, nullable=True)   # ["financial services", "b2b saas"]
+    size = Column(String(50), nullable=True)  # "startup", "mid-size", "enterprise"
+    stage = Column(String(50), nullable=True)  # "series-a", "public", "unicorn"
+
+    # Additional metadata
+    tech_stack = Column(JSON, nullable=True)  # ["python", "react", "aws"]
+    description = Column(Text, nullable=True)
+    headquarters = Column(String(200), nullable=True)
+
+    # Data sources
+    greenhouse_token = Column(String(100), nullable=True)
+    workday_slug = Column(String(100), nullable=True)
+    website = Column(String(500), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Company(id={self.id}, name='{self.name}', industries={self.industries})>"
 
 
 class RateLimitRecord(Base):

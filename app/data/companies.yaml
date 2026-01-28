@@ -1,0 +1,379 @@
+companies:
+  # Greenhouse Companies
+  - name: Stripe
+    greenhouse_token: stripe
+    industries: [fintech, payments, infrastructure]
+    verticals: [financial services, b2b saas, developer tools]
+    size: enterprise
+    stage: public
+    tech_stack: [ruby, scala, react, go, kubernetes, aws]
+    description: >
+      Online payment processing platform for internet businesses providing developer-first
+      APIs for accepting payments, managing subscriptions, and scaling revenue globally.
+    headquarters: San Francisco, CA
+    website: https://stripe.com
+
+  - name: Airbnb
+    greenhouse_token: airbnb
+    industries: [marketplace, travel, hospitality]
+    verticals: [consumer, sharing economy]
+    size: enterprise
+    stage: public
+    tech_stack: [ruby, react, java, python, airflow, kubernetes]
+    description: >
+      Online marketplace connecting people who want to rent out their homes with travelers
+      seeking accommodations, operating in 220+ countries and regions worldwide.
+    headquarters: San Francisco, CA
+    website: https://airbnb.com
+
+  - name: Cloudflare
+    greenhouse_token: cloudflare
+    industries: [infrastructure, cybersecurity, networking]
+    verticals: [b2b saas, developer tools, cloud]
+    size: enterprise
+    stage: public
+    tech_stack: [go, rust, lua, nginx, workers, edge computing]
+    description: >
+      Web infrastructure and security company providing CDN, DDoS protection, DNS services,
+      and edge computing solutions to millions of websites globally.
+    headquarters: San Francisco, CA
+    website: https://cloudflare.com
+
+  - name: Figma
+    greenhouse_token: figma
+    industries: [design tools, saas, collaboration]
+    verticals: [b2b saas, developer tools, creative software]
+    size: large
+    stage: acquired
+    tech_stack: [typescript, react, rust, webassembly, webgl]
+    description: >
+      Collaborative web-based design and prototyping platform enabling teams to create,
+      test, and ship better products together in real-time.
+    headquarters: San Francisco, CA
+    website: https://figma.com
+
+  - name: Notion
+    greenhouse_token: notion
+    industries: [productivity, saas, collaboration]
+    verticals: [b2b saas, b2c, knowledge management]
+    size: large
+    stage: unicorn
+    tech_stack: [typescript, react, node, postgres, redis]
+    description: >
+      All-in-one workspace combining notes, docs, wikis, and project management tools,
+      enabling teams and individuals to organize knowledge and collaborate effectively.
+    headquarters: San Francisco, CA
+    website: https://notion.so
+
+  - name: Databricks
+    greenhouse_token: databricks
+    industries: [data analytics, ai, cloud]
+    verticals: [b2b saas, data platform, machine learning]
+    size: enterprise
+    stage: unicorn
+    tech_stack: [scala, spark, python, delta lake, mlflow, aws, azure]
+    description: >
+      Unified analytics platform built on Apache Spark, enabling data engineering, data science,
+      and machine learning workflows at scale on cloud infrastructure.
+    headquarters: San Francisco, CA
+    website: https://databricks.com
+
+  - name: Plaid
+    greenhouse_token: plaid
+    industries: [fintech, api, infrastructure]
+    verticals: [financial services, developer tools, b2b saas]
+    size: large
+    stage: unicorn
+    tech_stack: [python, node, react, postgres, kubernetes, aws]
+    description: >
+      Financial technology platform providing APIs that enable applications to connect with users'
+      bank accounts, facilitating payments, identity verification, and financial data access.
+    headquarters: San Francisco, CA
+    website: https://plaid.com
+
+  - name: Reddit
+    greenhouse_token: reddit
+    industries: [social media, community, content]
+    verticals: [consumer, b2c, media]
+    size: enterprise
+    stage: public
+    tech_stack: [python, react, postgres, cassandra, thrift, kubernetes]
+    description: >
+      Social news aggregation and discussion platform where users submit content to communities
+      (subreddits), vote on submissions, and engage in threaded discussions.
+    headquarters: San Francisco, CA
+    website: https://reddit.com
+
+  - name: Coinbase
+    greenhouse_token: coinbase
+    industries: [fintech, cryptocurrency, blockchain]
+    verticals: [financial services, b2c, exchange]
+    size: enterprise
+    stage: public
+    tech_stack: [ruby, react, go, postgres, kubernetes, aws]
+    description: >
+      Cryptocurrency exchange platform enabling users to buy, sell, store, and manage
+      digital currencies with regulated and secure infrastructure.
+    headquarters: San Francisco, CA
+    website: https://coinbase.com
+
+  - name: Ramp
+    greenhouse_token: ramp
+    industries: [fintech, spend management, corporate cards]
+    verticals: [b2b saas, financial services]
+    size: large
+    stage: unicorn
+    tech_stack: [typescript, python, react, postgres, kubernetes]
+    description: >
+      Corporate card and spend management platform helping businesses control expenses,
+      automate expense reporting, and optimize cash flow with modern financial tools.
+    headquarters: New York, NY
+    website: https://ramp.com
+
+  - name: Robinhood
+    greenhouse_token: robinhood
+    industries: [fintech, investing, brokerage]
+    verticals: [b2c, financial services]
+    size: enterprise
+    stage: public
+    tech_stack: [python, django, react, postgres, kubernetes, aws]
+    description: >
+      Commission-free stock trading app democratizing finance by enabling retail investors
+      to trade stocks, ETFs, options, and cryptocurrencies without traditional fees.
+    headquarters: Menlo Park, CA
+    website: https://robinhood.com
+
+  - name: DoorDash
+    greenhouse_token: doordash
+    industries: [marketplace, food delivery, logistics]
+    verticals: [consumer, b2c, on-demand]
+    size: enterprise
+    stage: public
+    tech_stack: [kotlin, python, react, go, postgres, kafka, kubernetes]
+    description: >
+      On-demand food delivery platform connecting customers with local restaurants
+      and delivering meals through independent contractors using efficient logistics.
+    headquarters: San Francisco, CA
+    website: https://doordash.com
+
+  - name: Instacart
+    greenhouse_token: instacart
+    industries: [marketplace, grocery delivery, logistics]
+    verticals: [consumer, b2c, on-demand]
+    size: enterprise
+    stage: public
+    tech_stack: [ruby, react, python, postgres, kafka, kubernetes]
+    description: >
+      Grocery delivery and pickup service partnering with retailers to enable customers
+      to shop online and receive same-day delivery through personal shoppers.
+    headquarters: San Francisco, CA
+    website: https://instacart.com
+
+  - name: Affirm
+    greenhouse_token: affirm
+    industries: [fintech, payments, consumer lending]
+    verticals: [b2c, financial services, bnpl]
+    size: large
+    stage: public
+    tech_stack: [python, scala, react, postgres, kafka, kubernetes]
+    description: >
+      Buy now, pay later (BNPL) platform offering transparent installment loans at point
+      of sale, enabling consumers to split purchases into manageable monthly payments.
+    headquarters: San Francisco, CA
+    website: https://affirm.com
+
+  - name: Brex
+    greenhouse_token: brex
+    industries: [fintech, corporate cards, spend management]
+    verticals: [b2b saas, financial services]
+    size: large
+    stage: unicorn
+    tech_stack: [elixir, react, postgres, kubernetes, aws]
+    description: >
+      Financial services platform providing corporate credit cards, cash management,
+      and expense management solutions designed for startups and technology companies.
+    headquarters: San Francisco, CA
+    website: https://brex.com
+
+  - name: Chime
+    greenhouse_token: chime
+    industries: [fintech, neobank, consumer banking]
+    verticals: [b2c, financial services]
+    size: enterprise
+    stage: unicorn
+    tech_stack: [java, python, react, postgres, kubernetes, aws]
+    description: >
+      Digital banking platform offering fee-free checking and savings accounts with early
+      direct deposit, automatic savings, and modern mobile-first banking experience.
+    headquarters: San Francisco, CA
+    website: https://chime.com
+
+  - name: Gusto
+    greenhouse_token: gusto
+    industries: [fintech, hr tech, payroll]
+    verticals: [b2b saas, financial services, human resources]
+    size: large
+    stage: unicorn
+    tech_stack: [ruby, react, postgres, kafka, kubernetes]
+    description: >
+      Modern payroll, benefits, and HR platform for small businesses, automating compliance,
+      tax filing, and employee management with intuitive software.
+    headquarters: San Francisco, CA
+    website: https://gusto.com
+
+  - name: Rippling
+    greenhouse_token: rippling
+    industries: [hr tech, fintech, it management]
+    verticals: [b2b saas, human resources, enterprise software]
+    size: large
+    stage: unicorn
+    tech_stack: [python, react, typescript, postgres, kubernetes]
+    description: >
+      All-in-one HR, IT, and finance platform managing payroll, benefits, devices, and apps
+      from a single system, automating employee onboarding and offboarding.
+    headquarters: San Francisco, CA
+    website: https://rippling.com
+
+  - name: Airtable
+    greenhouse_token: airtable
+    industries: [productivity, no-code, database]
+    verticals: [b2b saas, low-code platform, collaboration]
+    size: large
+    stage: unicorn
+    tech_stack: [node, react, typescript, postgres, redis]
+    description: >
+      Low-code platform combining the simplicity of spreadsheets with the power of databases,
+      enabling teams to build custom applications and workflows without coding.
+    headquarters: San Francisco, CA
+    website: https://airtable.com
+
+  # Workday Companies
+  - name: Adobe
+    workday_slug: adobe
+    industries: [creative software, digital marketing, cloud]
+    verticals: [b2b saas, enterprise software, creative tools]
+    size: enterprise
+    stage: public
+    tech_stack: [java, javascript, react, node, aws, azure]
+    description: >
+      Software company providing creative, marketing, and document management solutions
+      including Photoshop, Illustrator, Experience Cloud, and Adobe Acrobat.
+    headquarters: San Jose, CA
+    website: https://adobe.com
+
+  - name: Salesforce
+    workday_slug: salesforce
+    industries: [crm, cloud, enterprise software]
+    verticals: [b2b saas, sales enablement, customer success]
+    size: enterprise
+    stage: public
+    tech_stack: [java, javascript, apex, react, lightning, aws]
+    description: >
+      Cloud-based customer relationship management (CRM) platform helping businesses manage
+      sales, service, marketing, and analytics with integrated enterprise applications.
+    headquarters: San Francisco, CA
+    website: https://salesforce.com
+
+  - name: Visa
+    workday_slug: visa
+    industries: [fintech, payments, financial services]
+    verticals: [b2b, b2c, payment networks]
+    size: enterprise
+    stage: public
+    tech_stack: [java, c++, python, oracle, mainframe, cloud]
+    description: >
+      Global payments technology company facilitating electronic funds transfers through
+      branded credit, debit, and prepaid card programs across 200+ countries.
+    headquarters: San Francisco, CA
+    website: https://visa.com
+
+  - name: Mastercard
+    workday_slug: mastercard
+    industries: [fintech, payments, financial services]
+    verticals: [b2b, b2c, payment networks]
+    size: enterprise
+    stage: public
+    tech_stack: [java, python, react, oracle, kubernetes, cloud]
+    description: >
+      Multinational financial services corporation providing payment processing and
+      technology services connecting consumers, businesses, and financial institutions.
+    headquarters: Purchase, NY
+    website: https://mastercard.com
+
+  - name: ServiceNow
+    workday_slug: servicenow
+    industries: [enterprise software, it management, workflow automation]
+    verticals: [b2b saas, itsm, digital transformation]
+    size: enterprise
+    stage: public
+    tech_stack: [javascript, java, angular, mysql, glide]
+    description: >
+      Cloud computing platform providing IT service management (ITSM), IT operations management,
+      and workflow automation for enterprise businesses.
+    headquarters: Santa Clara, CA
+    website: https://servicenow.com
+
+  - name: NVIDIA
+    workday_slug: nvidia
+    industries: [semiconductors, ai, graphics]
+    verticals: [hardware, gpu, machine learning]
+    size: enterprise
+    stage: public
+    tech_stack: [cuda, c++, python, pytorch, tensorflow, deeplearning]
+    description: >
+      Technology company designing graphics processing units (GPUs) for gaming and professional
+      markets, and system on chip (SoC) units for AI computing and autonomous vehicles.
+    headquarters: Santa Clara, CA
+    website: https://nvidia.com
+
+  - name: Atlassian
+    workday_slug: atlassian
+    industries: [productivity, collaboration, project management]
+    verticals: [b2b saas, developer tools, enterprise software]
+    size: enterprise
+    stage: public
+    tech_stack: [java, scala, react, node, postgres, kubernetes]
+    description: >
+      Software company creating collaboration and productivity tools for teams including
+      Jira, Confluence, Trello, and Bitbucket for project and software development.
+    headquarters: Sydney, Australia
+    website: https://atlassian.com
+
+  - name: Okta
+    workday_slug: okta
+    industries: [cybersecurity, identity management, cloud]
+    verticals: [b2b saas, enterprise security, access management]
+    size: large
+    stage: public
+    tech_stack: [java, javascript, react, postgres, kubernetes, aws]
+    description: >
+      Identity and access management platform providing secure authentication, single sign-on,
+      and multi-factor authentication for enterprises and developers.
+    headquarters: San Francisco, CA
+    website: https://okta.com
+
+  - name: CrowdStrike
+    workday_slug: crowdstrike
+    industries: [cybersecurity, endpoint protection, cloud security]
+    verticals: [b2b saas, enterprise security, threat intelligence]
+    size: enterprise
+    stage: public
+    tech_stack: [go, python, react, cassandra, kafka, kubernetes]
+    description: >
+      Cybersecurity technology company providing cloud-delivered endpoint and workload
+      protection, threat intelligence, and cyberattack response services.
+    headquarters: Austin, TX
+    website: https://crowdstrike.com
+
+  - name: DocuSign
+    workday_slug: docusign
+    industries: [saas, document management, e-signature]
+    verticals: [b2b saas, legal tech, workflow automation]
+    size: large
+    stage: public
+    tech_stack: [java, javascript, react, postgres, aws, microservices]
+    description: >
+      Electronic signature and agreement cloud provider enabling businesses to manage
+      document workflows, digital transactions, and legally binding e-signatures.
+    headquarters: San Francisco, CA
+    website: https://docusign.com

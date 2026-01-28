@@ -14,7 +14,7 @@ import yaml
 from pathlib import Path
 
 from app.db import get_db, init_db
-from app.models import Run, Job, JobStatus, RunStatus, UserProfile, RateLimitRecord
+from app.models import Run, Job, JobStatus, RunStatus, UserProfile, RateLimitRecord, Company
 from app.orchestrator import PipelineOrchestrator
 from app.config import config
 from app.user_profile import get_user_profile, create_default_profile
@@ -286,6 +286,11 @@ class UserProfileUpdate(BaseModel):
     notice_period: Optional[str] = None
     relocation_preference: Optional[str] = None
     remote_preference: Optional[str] = None
+    # Company preferences (for RAG-based suggestions)
+    preferred_industries: Optional[List[str]] = None
+    preferred_company_sizes: Optional[List[str]] = None
+    preferred_company_stages: Optional[List[str]] = None
+    preferred_tech_stack: Optional[List[str]] = None
     is_onboarded: Optional[bool] = None
 
 
@@ -1210,6 +1215,110 @@ async def upload_resume(
     except Exception as e:
         logger.error(f"Error uploading resume: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to process resume file")
+
+
+# Company endpoints
+class CompanySuggestionRequest(BaseModel):
+    """Request model for company suggestions."""
+    industries: Optional[List[str]] = None
+    company_sizes: Optional[List[str]] = None
+    company_stages: Optional[List[str]] = None
+    tech_stack: Optional[List[str]] = None
+    limit: int = 15
+
+
+@app.get("/companies")
+async def list_companies(
+    db: Session = Depends(get_db),
+    industry: Optional[str] = None,
+    size: Optional[str] = None,
+    stage: Optional[str] = None,
+    limit: int = 100,
+    _: bool = Depends(verify_api_key),
+):
+    """List all companies with optional filtering."""
+    try:
+        query = db.query(Company)
+
+        if size:
+            query = query.filter(Company.size == size)
+
+        if stage:
+            query = query.filter(Company.stage == stage)
+
+        companies = query.limit(limit).all()
+
+        # Filter by industry in Python (JSON filtering in SQLite is complex)
+        if industry:
+            companies = [c for c in companies if c.industries and industry.lower() in [i.lower() for i in c.industries]]
+
+        return [{
+            "id": c.id,
+            "name": c.name,
+            "industries": c.industries,
+            "verticals": c.verticals,
+            "size": c.size,
+            "stage": c.stage,
+            "tech_stack": c.tech_stack,
+            "description": c.description,
+            "headquarters": c.headquarters,
+            "website": c.website
+        } for c in companies]
+
+    except Exception as e:
+        logger.error(f"Error listing companies: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to list companies")
+
+
+@app.post("/companies/suggest")
+async def suggest_companies(
+    request: CompanySuggestionRequest,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_api_key),
+):
+    """Get RAG-based company suggestions based on user preferences."""
+    try:
+        from app.rag.company_service import CompanyRAGService
+
+        rag_service = CompanyRAGService(db=db)
+        suggestions = rag_service.suggest_companies(
+            industries=request.industries,
+            company_sizes=request.company_sizes,
+            company_stages=request.company_stages,
+            tech_stack=request.tech_stack,
+            k=request.limit
+        )
+
+        return {"suggestions": suggestions}
+
+    except Exception as e:
+        logger.error(f"Error generating company suggestions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate suggestions")
+
+
+@app.post("/companies/index")
+async def index_companies(
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_api_key),
+):
+    """Index all companies in RAG vector store."""
+    try:
+        from app.rag.company_service import CompanyRAGService
+
+        rag_service = CompanyRAGService(db=db)
+        results = rag_service.index_all_companies()
+
+        return {
+            "status": "success" if results["failed"] == 0 else "partial",
+            "total": results["total"],
+            "indexed": results["success"],
+            "failed": results["failed"],
+            "errors": results["errors"]
+        }
+
+    except Exception as e:
+        logger.error(f"Error indexing companies: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to index companies")
 
 
 # Scheduler endpoints

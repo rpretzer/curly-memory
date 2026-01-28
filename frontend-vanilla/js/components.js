@@ -397,15 +397,21 @@ const components = {
 
                 // Input event handler
                 input.addEventListener('input', (e) => {
-                    const value = e.target.value.toLowerCase();
+                    const value = e.target.value;
                     if (value.length === 0) {
                         this.hideSuggestions();
                         return;
                     }
 
-                    this.filteredSuggestions = this.suggestions.filter(s =>
-                        s.toLowerCase().includes(value)
-                    ).slice(0, 10);
+                    // Use fuzzy matching for better suggestions
+                    if (window.filterSuggestions) {
+                        this.filteredSuggestions = window.filterSuggestions(value, this.suggestions, 10);
+                    } else {
+                        // Fallback to simple filtering if fuzzy matching not available
+                        this.filteredSuggestions = this.suggestions.filter(s =>
+                            s.toLowerCase().includes(value.toLowerCase())
+                        ).slice(0, 10);
+                    }
 
                     if (this.filteredSuggestions.length > 0) {
                         this.showSuggestions();
