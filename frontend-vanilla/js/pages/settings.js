@@ -277,7 +277,40 @@ const settingsPage = {
                     <div id="skills-chip-input"></div>
                 </div>
 
-                <div class="form-group">
+                <div class="card p-3 mt-3" style="background-color: var(--bg-tertiary);">
+                    <h4 class="text-sm font-semibold mb-3">Company Preferences</h4>
+
+                    <div class="form-group">
+                        <label class="form-label">Preferred Industries/Verticals</label>
+                        <div id="preferred-industries-chip-input"></div>
+                        <p class="text-xs text-muted mt-1">e.g., fintech, ai, healthcare, saas</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Preferred Company Sizes</label>
+                        <div id="preferred-company-sizes-chip-input"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Preferred Company Stages</label>
+                        <div id="preferred-company-stages-chip-input"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Preferred Tech Stack</label>
+                        <div id="preferred-tech-stack-chip-input"></div>
+                        <p class="text-xs text-muted mt-1">Technologies you want to work with</p>
+                    </div>
+
+                    <div class="form-group">
+                        <button type="button" class="btn btn-secondary" onclick="settingsPage.suggestCompanies()">
+                            Get Company Suggestions ✨
+                        </button>
+                        <p class="text-xs text-muted mt-1">AI will suggest companies based on your preferences (auto-adds top 5, shows 10 more)</p>
+                    </div>
+                </div>
+
+                <div class="form-group mt-3">
                     <label class="form-label">Target Companies</label>
                     <div id="target-companies-chip-input"></div>
                 </div>
@@ -749,6 +782,13 @@ const settingsPage = {
 
         setupChipInput('target-titles-chip-input', profile.target_titles || [], 'blue', SUGGESTIONS.jobTitles);
         setupChipInput('skills-chip-input', profile.skills || [], 'green', SUGGESTIONS.skills);
+
+        // Company preferences
+        setupChipInput('preferred-industries-chip-input', profile.preferred_industries || [], 'purple', SUGGESTIONS.industries);
+        setupChipInput('preferred-company-sizes-chip-input', profile.preferred_company_sizes || [], 'blue', SUGGESTIONS.companySizes);
+        setupChipInput('preferred-company-stages-chip-input', profile.preferred_company_stages || [], 'yellow', SUGGESTIONS.companyStages);
+        setupChipInput('preferred-tech-stack-chip-input', profile.preferred_tech_stack || [], 'green', SUGGESTIONS.techStack);
+
         setupChipInput('target-companies-chip-input', profile.target_companies || [], 'purple', SUGGESTIONS.companies);
         setupChipInput('must-have-keywords-chip-input', profile.must_have_keywords || [], 'red', SUGGESTIONS.keywords);
         setupChipInput('nice-to-have-keywords-chip-input', profile.nice_to_have_keywords || [], 'yellow', SUGGESTIONS.keywords);
@@ -777,6 +817,11 @@ const settingsPage = {
                 current_title: formData.get('current_title'),
                 target_titles: window.chipInputs['target-titles']?.getItems() || [],
                 skills: window.chipInputs['skills']?.getItems() || [],
+                // Company preferences
+                preferred_industries: window.chipInputs['preferred-industries']?.getItems() || [],
+                preferred_company_sizes: window.chipInputs['preferred-company-sizes']?.getItems() || [],
+                preferred_company_stages: window.chipInputs['preferred-company-stages']?.getItems() || [],
+                preferred_tech_stack: window.chipInputs['preferred-tech-stack']?.getItems() || [],
                 target_companies: window.chipInputs['target-companies']?.getItems() || [],
                 must_have_keywords: window.chipInputs['must-have-keywords']?.getItems() || [],
                 nice_to_have_keywords: window.chipInputs['nice-to-have-keywords']?.getItems() || [],
@@ -1230,6 +1275,130 @@ const settingsPage = {
             }
         } catch (error) {
             components.notify(`Error: ${error.message}`, 'error');
+        }
+    },
+
+    async suggestCompanies() {
+        const industries = window.chipInputs['preferred-industries']?.getItems() || [];
+        const sizes = window.chipInputs['preferred-company-sizes']?.getItems() || [];
+        const stages = window.chipInputs['preferred-company-stages']?.getItems() || [];
+        const techStack = window.chipInputs['preferred-tech-stack']?.getItems() || [];
+
+        if (!industries.length && !sizes.length && !stages.length && !techStack.length) {
+            components.notify('Please add at least one preference first', 'warning');
+            return;
+        }
+
+        try {
+            components.notify('Getting company suggestions...', 'info');
+
+            const response = await api.request('/companies/suggest', {
+                method: 'POST',
+                body: JSON.stringify({
+                    industries,
+                    company_sizes: sizes,
+                    company_stages: stages,
+                    tech_stack: techStack,
+                    limit: 15
+                })
+            });
+
+            const suggestions = response.suggestions || [];
+
+            if (suggestions.length === 0) {
+                components.notify('No company suggestions found. Try different preferences.', 'warning');
+                return;
+            }
+
+            // Hybrid approach: Auto-add top 5, show remaining 10 for manual selection
+            const autoAddCount = Math.min(5, suggestions.length);
+            const targetCompaniesChip = window.chipInputs['target-companies'];
+
+            // Auto-add top 5 highest-scoring companies
+            const autoAdded = [];
+            for (let i = 0; i < autoAddCount; i++) {
+                const company = suggestions[i];
+                const existingCompanies = targetCompaniesChip?.getItems() || [];
+                if (targetCompaniesChip && !existingCompanies.includes(company.name)) {
+                    targetCompaniesChip.add(company.name);
+                    autoAdded.push(company.name);
+                }
+            }
+
+            if (autoAdded.length > 0) {
+                components.notify(`Auto-added ${autoAdded.length} top companies`, 'success');
+            }
+
+            // Show remaining suggestions in modal for manual selection
+            const remainingSuggestions = suggestions.slice(autoAddCount);
+            if (remainingSuggestions.length > 0) {
+                this.showCompanySuggestions(remainingSuggestions);
+            }
+
+        } catch (error) {
+            components.notify(`Error getting suggestions: ${error.message}`, 'error');
+        }
+    },
+
+    showCompanySuggestions(suggestions) {
+        // Create modal with suggestions (remaining companies not auto-added)
+        const modal = `
+            <div class="modal-overlay" id="companySuggestionsModal" onclick="settingsPage.closeCompanySuggestions(event)">
+                <div class="modal-content" style="max-width: 600px;" onclick="event.stopPropagation()">
+                    <h3>More Suggested Companies</h3>
+                    <p class="text-sm text-muted">Here are additional companies you might be interested in:</p>
+
+                    <div class="suggestions-list" style="max-height: 400px; overflow-y: auto; margin-top: 1rem;">
+                        ${suggestions.map(s => `
+                            <div class="suggestion-item" style="padding: 1rem; border-bottom: 1px solid var(--border);">
+                                <div class="flex-between">
+                                    <div style="flex: 1;">
+                                        <strong>${components.escapeHtml(s.name)}</strong>
+                                        ${s.industries ? `<div class="text-sm text-muted">${s.industries.join(', ')}</div>` : ''}
+                                        ${s.size ? `<div class="text-xs text-muted">${s.size}</div>` : ''}
+                                        ${s.description ? `<div class="text-xs mt-1">${components.escapeHtml(s.description.substring(0, 100))}...</div>` : ''}
+                                    </div>
+                                    <button class="btn btn-sm btn-primary" style="margin-left: 1rem;"
+                                        onclick="settingsPage.addTargetCompany('${components.escapeHtml(s.name)}')">
+                                        Add
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="flex-end gap-2 mt-3">
+                        <button class="btn btn-secondary" onclick="settingsPage.closeCompanySuggestions()">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modal);
+    },
+
+    addTargetCompany(companyName) {
+        const targetCompaniesChip = window.chipInputs['target-companies'];
+        if (targetCompaniesChip) {
+            const existingCompanies = targetCompaniesChip.getItems();
+            if (!existingCompanies.includes(companyName)) {
+                targetCompaniesChip.add(companyName);
+                components.notify(`Added ${companyName} to target companies`, 'success');
+            } else {
+                components.notify(`${companyName} is already in your target companies`, 'info');
+            }
+        }
+    },
+
+    closeCompanySuggestions(event) {
+        // Only close if clicking outside the modal content or the close button
+        if (!event || event.target.classList.contains('modal-overlay') || event.target.closest('.btn-secondary')) {
+            const modal = document.getElementById('companySuggestionsModal');
+            if (modal) {
+                modal.remove();
+            }
         }
     },
 
