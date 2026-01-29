@@ -1276,20 +1276,87 @@ async def suggest_companies(
     db: Session = Depends(get_db),
     _: bool = Depends(verify_api_key),
 ):
-    """Get RAG-based company suggestions based on user preferences."""
+    """Get company suggestions based on user preferences (with RAG fallback to simple matching)."""
     try:
-        from app.rag.company_service import CompanyRAGService
+        # Try RAG-based suggestions first
+        try:
+            from app.rag.company_service import CompanyRAGService
 
-        rag_service = CompanyRAGService(db=db)
-        suggestions = rag_service.suggest_companies(
-            industries=request.industries,
-            company_sizes=request.company_sizes,
-            company_stages=request.company_stages,
-            tech_stack=request.tech_stack,
-            k=request.limit
-        )
+            rag_service = CompanyRAGService(db=db)
+            suggestions = rag_service.suggest_companies(
+                industries=request.industries,
+                company_sizes=request.company_sizes,
+                company_stages=request.company_stages,
+                tech_stack=request.tech_stack,
+                k=request.limit
+            )
 
-        return {"suggestions": suggestions}
+            return {"suggestions": suggestions, "method": "rag"}
+
+        except (ImportError, Exception) as rag_error:
+            logger.warning(f"RAG not available, using fallback matching: {rag_error}")
+
+            # Fallback: Simple filtering and scoring
+            companies = db.query(Company).all()
+            scored_companies = []
+
+            for company in companies:
+                score = 0
+                reasons = []
+
+                # Score by industries
+                if request.industries and company.industries:
+                    industry_matches = sum(1 for i in request.industries
+                                         if any(i.lower() in ci.lower() for ci in company.industries))
+                    if industry_matches > 0:
+                        score += industry_matches * 30
+                        reasons.append(f"{industry_matches} industry matches")
+
+                # Score by size
+                if request.company_sizes and company.size:
+                    for size_pref in request.company_sizes:
+                        # Normalize size strings (remove parentheses)
+                        size_clean = size_pref.split('(')[0].strip() if '(' in size_pref else size_pref
+                        if size_clean.lower() in company.size.lower():
+                            score += 20
+                            reasons.append("size match")
+                            break
+
+                # Score by stage
+                if request.company_stages and company.stage:
+                    if any(stage.lower() in company.stage.lower() for stage in request.company_stages):
+                        score += 15
+                        reasons.append("stage match")
+
+                # Score by tech stack
+                if request.tech_stack and company.tech_stack:
+                    tech_matches = sum(1 for t in request.tech_stack
+                                     if any(t.lower() in ct.lower() for ct in company.tech_stack))
+                    if tech_matches > 0:
+                        score += tech_matches * 25
+                        reasons.append(f"{tech_matches} tech matches")
+
+                if score > 0:
+                    scored_companies.append({
+                        'id': company.id,
+                        'name': company.name,
+                        'industries': company.industries,
+                        'verticals': company.verticals,
+                        'size': company.size,
+                        'stage': company.stage,
+                        'tech_stack': company.tech_stack,
+                        'description': company.description,
+                        'headquarters': company.headquarters,
+                        'website': company.website,
+                        'relevance_score': score / 100.0,  # Normalize to 0-1 scale
+                        'match_reasons': reasons
+                    })
+
+            # Sort by score and return top k
+            scored_companies.sort(key=lambda x: x['relevance_score'], reverse=True)
+            suggestions = scored_companies[:request.limit]
+
+            return {"suggestions": suggestions, "method": "fallback"}
 
     except Exception as e:
         logger.error(f"Error generating company suggestions: {e}", exc_info=True)
