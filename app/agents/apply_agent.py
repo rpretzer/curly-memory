@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from app.models import Job, JobStatus, ApplicationType
+from app.models import Job, JobStatus, ApplicationType, UserProfile
 from app.config import config
 from app.agents.log_agent import LogAgent
 
@@ -64,38 +64,165 @@ class ApplyAgent:
     ) -> bool:
         """
         Apply to a job via API (if supported by the source).
-        
-        TODO: Implement API-based applications when job board APIs support it.
-        
+
+        IMPORTANT: Most job boards do NOT provide public APIs for job application
+        submission. This method will attempt to use an API adapter if available,
+        but will likely fail for most sources (LinkedIn, Indeed, etc.).
+
+        For sources without API support, use apply_via_playwright() instead.
+
         Args:
             job: Job to apply to
-            application_data: Application form data
+            application_data: Application form data including:
+                - cover_letter: Cover letter text
+                - resume_points: Tailored resume points
+                - application_answers: Answers to application questions
             run_id: Optional run ID for logging
-            
+
         Returns:
             True if application successful, False otherwise
         """
-        logger.info(f"Attempting API application for job: {job.id}")
-        
+        logger.info(f"Attempting API application for job {job.id} from source: {job.source}")
+
         if self.log_agent and run_id:
             self.log_agent.log_application_start(
                 run_id=run_id,
                 job_id=job.id,
                 application_type="api",
             )
-        
-        # TODO: Implement API-based application
-        # Example structure:
-        # if job.source == "linkedin":
-        #     response = requests.post(
-        #         f"{LINKEDIN_API_URL}/jobs/{job.source_id}/applications",
-        #         headers={"Authorization": f"Bearer {api_key}"},
-        #         json=application_data,
-        #     )
-        #     return response.status_code == 200
-        
-        logger.warning(f"API application not implemented for source: {job.source}")
-        return False
+
+        try:
+            # Get API adapter for the job source
+            from app.jobsources.api_adapters import get_api_adapter
+
+            # Get source-specific configuration
+            api_config = {}
+            if job.source.value == "greenhouse":
+                # Greenhouse requires a board_token (company identifier)
+                # This would need to be extracted from the job URL or configured
+                api_config["board_token"] = self._extract_greenhouse_board_token(job.source_url)
+
+            adapter = get_api_adapter(job.source.value, config=api_config)
+
+            if not adapter:
+                error_msg = f"No API adapter available for source: {job.source.value}"
+                logger.warning(error_msg)
+                job.application_error = error_msg
+                return False
+
+            # Extract job ID from source URL
+            job_source_id = self._extract_job_id_from_url(job.source_url, job.source.value)
+            if not job_source_id:
+                error_msg = f"Could not extract job ID from URL: {job.source_url}"
+                logger.warning(error_msg)
+                job.application_error = error_msg
+                return False
+
+            # Prepare application payload
+            api_payload = {
+                "cover_letter": application_data.get("cover_letter", ""),
+                "resume_points": application_data.get("resume_points", []),
+                "answers": application_data.get("application_answers", {}),
+                "contact_info": {
+                    "name": getattr(self.db.query(UserProfile).first(), "name", ""),
+                    "email": getattr(self.db.query(UserProfile).first(), "email", ""),
+                    "phone": getattr(self.db.query(UserProfile).first(), "phone", ""),
+                }
+            }
+
+            # Attempt API submission
+            success, error_message = adapter.submit_application(job_source_id, api_payload)
+
+            if not success:
+                logger.warning(f"API application failed for job {job.id}: {error_message}")
+                job.application_error = error_message
+
+                # Log that browser automation should be used instead
+                if "does not provide" in error_message or "Use browser automation" in error_message:
+                    logger.info(f"API not supported for {job.source.value}. Consider using browser automation instead.")
+            else:
+                logger.info(f"Successfully submitted application via API for job {job.id}")
+
+            return success
+
+        except Exception as e:
+            error_msg = f"Error in API application: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            job.application_error = error_msg
+
+            if self.log_agent and run_id:
+                self.log_agent.log_error(
+                    agent_name=self.agent_name,
+                    error=e,
+                    run_id=run_id,
+                    job_id=job.id,
+                    step="api_apply",
+                )
+
+            return False
+
+    def _extract_job_id_from_url(self, url: str, source: str) -> Optional[str]:
+        """
+        Extract job ID from source URL.
+
+        Args:
+            url: Job posting URL
+            source: Job source (linkedin, indeed, greenhouse, etc.)
+
+        Returns:
+            Job ID or None if not found
+        """
+        import re
+
+        try:
+            if source == "linkedin":
+                # LinkedIn URLs: https://www.linkedin.com/jobs/view/1234567890
+                match = re.search(r'/jobs/view/(\d+)', url)
+                return match.group(1) if match else None
+
+            elif source == "indeed":
+                # Indeed URLs: https://www.indeed.com/viewjob?jk=abc123xyz
+                match = re.search(r'[?&]jk=([^&]+)', url)
+                return match.group(1) if match else None
+
+            elif source == "greenhouse":
+                # Greenhouse URLs: https://boards.greenhouse.io/company/jobs/1234567
+                match = re.search(r'/jobs/(\d+)', url)
+                return match.group(1) if match else None
+
+            elif source == "workday":
+                # Workday URLs vary by company, but often contain job ID in path or query
+                # Example: https://company.wd1.myworkdayjobs.com/en-US/careers/job/Job-Title_JR123456
+                match = re.search(r'_([A-Z0-9-]+)(?:\?|$)', url)
+                return match.group(1) if match else None
+
+            else:
+                logger.warning(f"Unknown source for job ID extraction: {source}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error extracting job ID from URL {url}: {e}")
+            return None
+
+    def _extract_greenhouse_board_token(self, url: str) -> Optional[str]:
+        """
+        Extract Greenhouse board token (company identifier) from job URL.
+
+        Args:
+            url: Greenhouse job URL
+
+        Returns:
+            Board token or None if not found
+        """
+        import re
+
+        try:
+            # Greenhouse URLs: https://boards.greenhouse.io/{board_token}/jobs/...
+            match = re.search(r'boards\.greenhouse\.io/([^/]+)/', url)
+            return match.group(1) if match else None
+        except Exception as e:
+            logger.error(f"Error extracting Greenhouse board token from URL {url}: {e}")
+            return None
     
     def apply_via_playwright(
         self,
