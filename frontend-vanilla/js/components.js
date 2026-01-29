@@ -270,36 +270,83 @@ const components = {
         if (!runStatus) return '';
 
         const isComplete = runStatus.status === 'completed' || runStatus.status === 'failed';
-        const isSpinning = !isComplete;
+        const isSpinning = !isComplete && runStatus.status !== 'content_generating';
 
-        // Calculate progress percentage
+        // Determine current phase and completion status
         let progressPercent = 0;
-        if (runStatus.jobs_found > 0) progressPercent = 33;
-        if (runStatus.jobs_scored > 0) progressPercent = 66;
-        if (runStatus.status === 'completed') progressPercent = 100;
+        let phaseMessage = '';
+        const phases = [];
 
-        // Status messages
-        const statusMessages = {
-            'pending': 'Initializing...',
-            'searching': 'Searching job boards...',
-            'scoring': 'Scoring and filtering jobs...',
-            'content_generation': 'Generating content...',
-            'completed': 'Search complete!',
-            'failed': 'Search failed. Check logs for details.'
-        };
+        // Phase 1: Searching
+        if (runStatus.status === 'pending' || runStatus.status === 'searching') {
+            progressPercent = 25;
+            phaseMessage = 'Searching job boards...';
+            phases.push({ name: 'Search', status: 'active', icon: '🔍' });
+        } else {
+            phases.push({ name: 'Search', status: 'complete', icon: '✓' });
+        }
 
-        const statusMessage = statusMessages[runStatus.status] || 'Processing...';
+        // Phase 2: Scoring
+        if (runStatus.status === 'scoring') {
+            progressPercent = 50;
+            phaseMessage = 'Scoring and filtering jobs...';
+            phases.push({ name: 'Score', status: 'active', icon: '📊' });
+        } else if (runStatus.jobs_scored > 0 || runStatus.status === 'completed' || runStatus.status === 'content_generating' || runStatus.status === 'applying') {
+            progressPercent = 50;
+            phases.push({ name: 'Score', status: 'complete', icon: '✓' });
+        }
+
+        // Phase 3: Content Generation (if applicable)
+        if (runStatus.status === 'content_generating') {
+            progressPercent = 75;
+            phaseMessage = 'Generating tailored content...';
+            phases.push({ name: 'Content', status: 'active', icon: '✍️' });
+        } else if (runStatus.status === 'applying') {
+            progressPercent = 75;
+            phases.push({ name: 'Content', status: 'complete', icon: '✓' });
+        }
+
+        // Phase 4: Applying (if applicable)
+        if (runStatus.status === 'applying') {
+            progressPercent = 90;
+            phaseMessage = 'Applying to jobs...';
+            phases.push({ name: 'Apply', status: 'active', icon: '📤' });
+        }
+
+        // Final state
+        if (runStatus.status === 'completed') {
+            progressPercent = 100;
+            phaseMessage = runStatus.jobs_scored > 0 ?
+                `Search complete! Found ${runStatus.jobs_above_threshold || runStatus.jobs_scored} matching jobs.` :
+                'Search complete!';
+        } else if (runStatus.status === 'failed') {
+            progressPercent = 0;
+            phaseMessage = 'Search failed. Check logs for details.';
+        }
+
+        const statusMessage = phaseMessage || 'Processing...';
 
         return `
             <div class="progress-box">
                 <div class="progress-box-header">
                     <div class="progress-box-title">
                         ${isSpinning ? '<div class="spinner-sm"></div>' : ''}
-                        <span>Run #${runStatus.run_id} - ${runStatus.status.charAt(0).toUpperCase() + runStatus.status.slice(1)}</span>
+                        <span>Run #${runStatus.run_id} - ${runStatus.status.charAt(0).toUpperCase() + runStatus.status.slice(1).replace('_', ' ')}</span>
                     </div>
                     ${runStatus.status === 'completed' ? '<span style="color: var(--success); font-size: 0.75rem; font-weight: 600;">✓ Complete</span>' : ''}
                     ${runStatus.status === 'failed' ? '<span style="color: var(--error); font-size: 0.75rem; font-weight: 600;">✗ Failed</span>' : ''}
                 </div>
+
+                ${phases.length > 0 ? `
+                    <div class="progress-box-phases">
+                        ${phases.map(phase => `
+                            <div class="progress-phase ${phase.status}">
+                                <span class="phase-icon">${phase.status === 'complete' ? '✓' : phase.icon}</span>
+                                <span class="phase-name">${phase.name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : ''}
 
                 <div class="progress-box-stats">
                     <div class="progress-box-stat">
@@ -325,7 +372,11 @@ const components = {
                         <div class="progress-fill" style="width: ${progressPercent}%;"></div>
                     </div>
                     <div class="progress-box-message">${statusMessage}</div>
-                ` : ''}
+                ` : `
+                    <div class="progress-box-message" style="color: var(--success); font-weight: 500;">
+                        ${statusMessage}
+                    </div>
+                `}
             </div>
         `;
     },
