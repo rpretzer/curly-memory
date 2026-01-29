@@ -52,3 +52,11 @@ logs/
 
 # Playwright
 .playwright/
+
+# Application runtime files
+*.pid
+*.lock
+.encryption_key
+
+# User data
+resumes/
