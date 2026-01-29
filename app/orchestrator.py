@@ -475,10 +475,25 @@ class PipelineOrchestrator:
 
             run = self.db.query(Run).filter(Run.id == run_id).first()
 
+            # Log that search phase is complete before moving to content generation
+            logger.info(f"=== SEARCH PHASE COMPLETE ===")
+            logger.info(f"Jobs found and scored: {len(job_ids)}")
+            logger.info(f"Run status: {run.status}")
+
             # Generate content if requested
             if generate_content:
                 # Check if cancelled before content generation
                 self.check_cancelled(run_id)
+
+                logger.info(f"=== STARTING CONTENT GENERATION PHASE ===")
+                self.log_agent.log(
+                    agent_name="Orchestrator",
+                    status="info",
+                    message=f"Search phase complete. Starting content generation for {len(job_ids)} jobs.",
+                    run_id=run_id,
+                    step="search_complete",
+                    metadata={"job_count": len(job_ids)}
+                )
 
                 run.status = RunStatus.CONTENT_GENERATING
                 self.db.commit()
@@ -501,6 +516,27 @@ class PipelineOrchestrator:
                             job_id=job.id,
                             step="generate_content",
                         )
+
+                logger.info(f"=== CONTENT GENERATION PHASE COMPLETE ===")
+                self.log_agent.log(
+                    agent_name="Orchestrator",
+                    status="info",
+                    message=f"Content generation complete for {len(job_ids)} jobs.",
+                    run_id=run_id,
+                    step="content_generation_complete",
+                    metadata={"job_count": len(job_ids)}
+                )
+            else:
+                # If content generation not selected, log that search is the final phase
+                logger.info(f"=== SEARCH PHASE COMPLETE (No content generation selected) ===")
+                self.log_agent.log(
+                    agent_name="Orchestrator",
+                    status="info",
+                    message=f"Search phase complete. Content generation not selected.",
+                    run_id=run_id,
+                    step="search_complete_no_content",
+                    metadata={"job_count": len(job_ids)}
+                )
 
             # Auto-apply only if enabled and jobs are approved
             if auto_apply:
