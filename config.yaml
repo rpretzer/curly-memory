@@ -63,8 +63,8 @@ job_sources:
     rate_limit_delay: 2
     timeout_seconds: 75
     use_playwright: true
-    use_scrapeops: false  # Set to true and add API key below to bypass Indeed bot detection
-    scrapeops_api_key: null  # Get free API key from https://scrapeops.io/
+    use_scrapeops: true  # Using ScrapeOps API to bypass Indeed bot detection
+    scrapeops_api_key: 28c399d2-9e22-4f05-aa11-1b7597d78067
     use_hasdata: false
     hasdata_api_key: null  # Alternative: https://hasdata.com/
     max_retries: 3
