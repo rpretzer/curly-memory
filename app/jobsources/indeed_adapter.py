@@ -365,14 +365,50 @@ class IndeedAdapter(BaseJobSource):
             )
             title = title_elem.get_text(strip=True) if title_elem else "Unknown Title"
             
-            # Company - try multiple selectors
-            company_elem = (
-                card.find('span', {'data-testid': 'company-name'}) or
-                card.find('span', class_='companyName') or
-                card.find('a', {'data-testid': 'company-name'}) or
-                card.find('div', class_='company_location') or
-                card.find('span', class_='company')
-            )
+            # Company - try multiple selectors with extensive fallbacks
+            company_elem = None
+            company_selectors = [
+                ('span', {'data-testid': 'company-name'}),
+                ('a', {'data-testid': 'company-name'}),
+                ('span', {'class': 'companyName'}),
+                ('a', {'class': 'companyName'}),
+                ('span', {'class': re.compile(r'company', re.I)}),
+                ('a', {'class': re.compile(r'company', re.I)}),
+                ('div', {'data-testid': 'company-name'}),
+                ('div', {'class': 'companyName'}),
+                ('div', {'class': 'company_location'}),
+                ('span', {'class': 'company'}),
+                # Fallback: any link near the title that's not the title itself
+                ('a', {'href': re.compile(r'/cmp/|/companies/')}),
+            ]
+
+            for tag, attrs in company_selectors:
+                try:
+                    company_elem = card.find(tag, attrs)
+                    if company_elem:
+                        # Validate it's not empty
+                        text = company_elem.get_text(strip=True)
+                        if text and text != title and len(text) < 100:  # Company names shouldn't be too long
+                            break
+                        else:
+                            company_elem = None  # Reset and try next selector
+                except Exception:
+                    continue
+
+            # Additional fallback: look for any element with "companyName" or "company-name" in any attribute
+            if not company_elem:
+                try:
+                    # Find all elements and check their attributes
+                    for elem in card.find_all(['span', 'a', 'div']):
+                        elem_str = str(elem)
+                        if ('company-name' in elem_str.lower() or 'companyname' in elem_str.lower()) and elem.get_text(strip=True):
+                            potential_company = elem.get_text(strip=True)
+                            if potential_company != title and len(potential_company) < 100:
+                                company_elem = elem
+                                break
+                except Exception:
+                    pass
+
             company = company_elem.get_text(strip=True) if company_elem else "Unknown Company"
             
             # Location - try multiple selectors
@@ -466,12 +502,22 @@ class IndeedAdapter(BaseJobSource):
             company = "Unknown Company"
             location = None
             
-            # Look for company name nearby
+            # Look for company name nearby - try multiple approaches
             if parent:
-                company_elem = parent.find('span', class_=re.compile('company', re.I)) or parent.find('div', class_=re.compile('company', re.I))
+                # Try finding company elements
+                company_elem = (
+                    parent.find('span', class_=re.compile('company', re.I)) or
+                    parent.find('a', class_=re.compile('company', re.I)) or
+                    parent.find('div', class_=re.compile('company', re.I)) or
+                    parent.find('span', {'data-testid': 'company-name'}) or
+                    parent.find('a', {'data-testid': 'company-name'}) or
+                    parent.find('a', href=re.compile(r'/cmp/|/companies/'))
+                )
                 if company_elem:
-                    company = company_elem.get_text(strip=True)
-                
+                    potential_company = company_elem.get_text(strip=True)
+                    if potential_company and potential_company != title and len(potential_company) < 100:
+                        company = potential_company
+
                 location_elem = parent.find('div', class_=re.compile('location', re.I)) or parent.find('span', class_=re.compile('location', re.I))
                 if location_elem:
                     location = location_elem.get_text(strip=True)
@@ -653,19 +699,29 @@ class IndeedAdapter(BaseJobSource):
                 except Exception:
                     pass
             
-            # Company
+            # Company - try extensive selectors
             company = "Unknown Company"
             company_selectors = [
                 'span[data-testid="company-name"]',
+                'a[data-testid="company-name"]',
                 '.companyName',
+                'a.companyName',
+                'span.companyName',
                 '[data-testid="company-name"]',
+                'span[class*="company" i]',
+                'a[class*="company" i]',
+                'div[data-testid="company-name"]',
+                '.company_location',
+                'a[href*="/cmp/"]',
+                'a[href*="/companies/"]',
             ]
             for selector in company_selectors:
                 try:
                     company_elem = card.query_selector(selector)
                     if company_elem:
-                        company = company_elem.inner_text().strip()
-                        if company:
+                        potential_company = company_elem.inner_text().strip()
+                        if potential_company and potential_company != title and len(potential_company) < 100:
+                            company = potential_company
                             break
                 except Exception:
                     continue
